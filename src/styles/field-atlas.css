@@ -298,6 +298,14 @@ img { max-width: 100%; }
   display: flex; justify-content: space-between; align-items: center; gap: 25px;
 }
 .home-bottom-cta h2 { margin: 8px 0 0; font: 600 32px/1 var(--display); letter-spacing: -.05em; }
+.home-bottom-cta__actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.atlas-share-button {
+  display: inline-flex; min-height: 48px; align-items: center; justify-content: center; gap: 9px;
+  padding: 0 15px; border: 1px solid var(--line-strong); border-radius: 4px;
+  background: transparent; color: var(--petrol); font-size: 10px; font-weight: 800;
+  cursor: pointer; transition: color .18s, background .18s, border-color .18s;
+}
+.atlas-share-button:hover { background: #DCE9E7; border-color: #78969A; color: var(--ink); }
 .image-disclosure {
   width: min(1380px, calc(100% - 80px)); margin: 0 auto; padding: 0 0 30px;
   color: #829298; font: 8px/1.7 var(--mono);
@@ -409,6 +417,8 @@ img { max-width: 100%; }
   .platform-principles__intro { grid-column: auto; }
   .principle { grid-template-columns: 24px 20px 1fr; }
   .home-bottom-cta { width: calc(100% - 36px); align-items: start; flex-direction: column; padding: 40px 0; }
+  .home-bottom-cta__actions { width: 100%; }
+  .home-bottom-cta__actions .atlas-button, .home-bottom-cta__actions .atlas-share-button { flex: 1 1 auto; }
   .image-disclosure { width: calc(100% - 36px); }
   .route-placeholder { padding: 68px 24px; min-height: 600px; }
   .route-placeholder h1 { font-size: clamp(40px, 12vw, 58px); }
