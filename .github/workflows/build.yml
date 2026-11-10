@@ -7,6 +7,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   production-build:
     runs-on: ubuntu-latest
@@ -20,4 +23,11 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Build production site
-        run: npm run build
+        run: npm run build 2>&1 | tee build-output.log
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: omnivex-build-log
+          path: build-output.log
+          if-no-files-found: warn
