@@ -2,7 +2,7 @@ name: Build OMNIVEX
 
 on:
   push:
-    branches: [main]
+    branches: [main, field-atlas-redesign]
   pull_request:
     branches: [main]
   workflow_dispatch:
