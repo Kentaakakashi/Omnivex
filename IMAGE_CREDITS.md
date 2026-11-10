@@ -1,6 +1,8 @@
 # Image credits
 
-The current frontend uses Wikimedia Commons cosplay photographs as temporary visual references. These are photographs of cosplayers, not official promotional character renders, and do not imply endorsement by the rights holders.
+The homepage uses temporary image references sourced from Wikimedia Commons. Character-themed photographs are photographs of cosplayers, not official promotional character renders. The mythology image is a photograph of a historical sculpture. None of these images imply endorsement by rights holders.
+
+## Existing character references
 
 | Character reference | File / author | License | Source |
 |---|---|---|---|
@@ -12,4 +14,14 @@ The current frontend uses Wikimedia Commons cosplay photographs as temporary vis
 | Thor | Thor Cosplay.jpg — Juan Ignacio Rodríguez de León | CC BY 2.0 | https://commons.wikimedia.org/wiki/File:Thor_Cosplay.jpg |
 | Doctor Strange | 2023 NYCC Cosplay of Doctor Strange.jpg — LostplanetKD73 | CC BY-SA 4.0 | https://commons.wikimedia.org/wiki/File:2023_NYCC_Cosplay_of_Doctor_Strange.jpg |
 
-The Wikimedia file pages contain the original author, license text and attribution requirements. Keep this credit file with the project when redistributing the frontend. Replace these temporary references with appropriately licensed or commissioned character artwork before a public launch.
+## Homepage universe gallery references
+
+| Gallery subject | File / author | License | Source |
+|---|---|---|---|
+| Marvel cosplay group | Cosplay of Female Loki, Hawkeye and Captain America at the 2011 New York Comic Con.jpg — JoeInQueens | CC BY 2.0 | https://commons.wikimedia.org/wiki/File:Cosplay_of_Female_Loki,_Hawkeye_and_Captain_America_at_the_2011_New_York_Comic_Con.jpg |
+| Dragon Ball / Goku | Cosplay of Goku from Dragon Ball at Made in Asia 2023.jpg — Miguel Discart | CC BY-SA 2.0 | https://commons.wikimedia.org/wiki/File:Cosplay_of_Goku_from_Dragon_Ball_at_Made_in_Asia_2023.jpg |
+| Naruto cosplay group | Group Portrait of Naruto Cosplayers at CWT40 20150809.jpg — 玄史生 | CC0 1.0 | https://commons.wikimedia.org/wiki/File:Group_Portrait_of_Naruto_Cosplayers_at_CWT40_20150809.jpg |
+| God of War / Kratos | Kratos Cosplayer at Lucca Comics & Games 2014.jpg — Claudio Marinangeli | CC BY 2.0 | https://commons.wikimedia.org/wiki/File:Kratos_Cosplayer_at_Lucca_Comics_%26_Games_2014.jpg |
+| Greek mythology / Poseidon | Statue of Poseidon with Parian marble.jpg — Pinterpandai.com | CC BY-SA 3.0 | https://commons.wikimedia.org/wiki/File:Statue_of_Poseidon_with_Parian_marble.jpg |
+
+The linked Wikimedia file pages contain the applicable license terms and reuse details. Retain this document when redistributing the frontend. The current remote images are temporary references; before a public launch, replace them with locally managed, appropriately licensed or commissioned artwork and verify attribution requirements for each asset.
