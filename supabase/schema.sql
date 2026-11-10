@@ -497,7 +497,7 @@ create policy "argument owner update" on public.arguments for update to authenti
 do $$
 declare t text;
 begin
-  foreach t in array array['follows','saved_items','research_notes','notifications','event_registrations','user_reports'] loop
+  foreach t in array array['follows','saved_items','research_notes','notifications','event_registrations'] loop
     execute format('drop policy if exists "owner read" on public.%I', t);
     execute format('create policy "owner read" on public.%I for select to authenticated using (user_id = (select auth.uid()))', t);
   end loop;
