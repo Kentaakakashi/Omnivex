@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { ArrowDownRight, ArrowRight, ArrowUpRight, BookOpen, Compass, Fingerprint, Orbit, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowDownRight, ArrowRight, ArrowUpRight, BookOpen, Compass, Fingerprint, Orbit, ShieldCheck, Share2, Sparkles } from "lucide-react";
 import PixelBlast from "../../components/react-bits/backgrounds/PixelBlast.jsx";
 import LaserFlow from "../../components/react-bits/backgrounds/LaserFlow.jsx";
 import AccordionGallery from "../../components/react-bits/galleries/AccordionGallery.jsx";
 import Carousel from "../../components/react-bits/galleries/Carousel.jsx";
+import { useToast } from "../../app/providers/ToastProvider.jsx";
 
 const artwork = {
   spider: "https://commons.wikimedia.org/wiki/Special:FilePath/Spider-Man%20cosplay.jpg",
@@ -300,6 +301,24 @@ function PlatformPrinciples() {
 }
 
 export default function HomePage() {
+  const { showToast } = useToast();
+
+  const copyPageLink = async () => {
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(window.location.href);
+      showToast({
+        title: "Link copied",
+        description: "The OMNIVEX page address is ready to share."
+      });
+    } catch {
+      showToast({
+        title: "Could not copy the link",
+        description: "Use your browser's share or address-bar copy control instead."
+      });
+    }
+  };
+
   return (
     <div className="home-page">
       <Hero />
@@ -309,7 +328,7 @@ export default function HomePage() {
       <PlatformPrinciples />
       <div className="home-bottom-cta">
         <div><span className="section-kicker">THE ATLAS IS OPEN</span><h2>Start with a question.</h2></div>
-        <Link to="/discover" className="atlas-button atlas-button--dark">Explore OMNIVEX <ArrowDownRight size={16} /></Link>
+        <div className="home-bottom-cta__actions"><button type="button" className="atlas-share-button" onClick={copyPageLink}><Share2 size={15} /> Copy page link</button><Link to="/discover" className="atlas-button atlas-button--dark">Explore OMNIVEX <ArrowDownRight size={16} /></Link></div>
       </div>
       <p className="image-disclosure">Temporary visual references are licensed photographs of cosplayers or historical artwork, not official promotional character renders. Image attribution and license details are recorded in the repository.</p>
     </div>
