@@ -29,21 +29,28 @@ SOFTWARE.
 
 ## Runtime dependencies
 
-The frontend uses React, Motion, Lucide React, Radix UI Dialog, Radix UI Tabs and cmdk as runtime dependencies. Their licenses and notices remain with their respective packages in the npm dependency tree.
+The frontend uses React, React Router, Motion, GSAP, Lucide React, Hugeicons, Radix UI Dialog, Radix UI Tabs and cmdk as runtime dependencies. Their licenses and notices remain with their respective packages in the npm dependency tree.
 
 - React: https://github.com/facebook/react
 - Motion: https://github.com/motiondivision/motion
 - Lucide: https://github.com/lucide-icons/lucide
 - Radix UI: https://github.com/radix-ui/primitives
 - cmdk: https://github.com/pacocoursey/cmdk
+- GSAP: https://gsap.com/
+- Hugeicons: https://github.com/hugeicons/hugeicons
+- React Router: https://reactrouter.com/
 
-No component source from React Bits or Aceternity UI is copied into this repository.
+The official React Bits components listed above are copied into the redesign branch for use as part of the OMNIVEX website. Staggered Menu and Accordion Gallery have small application-navigation callbacks added; their defining interactions and presentation are preserved.
 
 
 ## React Bits
 
 The following official React Bits source components are integrated in the redesign branch:
 
+- Pixel Blast — https://reactbits.dev/backgrounds/pixel-blast
+- Accordion Gallery — https://reactbits.dev/components/accordion-gallery
+- Carousel — https://reactbits.dev/components/carousel
+- Laser Flow — https://reactbits.dev/animations/laser-flow
 - Pill Nav — https://reactbits.dev/components/pill-nav
 - Staggered Menu — https://reactbits.dev/components/staggered-menu
 - Swipe Toast — https://reactbits.dev/micro/swipe-toast
