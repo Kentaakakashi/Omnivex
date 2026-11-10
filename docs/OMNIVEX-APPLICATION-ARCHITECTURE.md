@@ -347,12 +347,14 @@ All journeys need real route transitions, correct state updates and explicit loa
 - Repository investigation: COMPLETED as source/metadata inspection; browser visual QA remains outstanding.
 - Both TXT prompts: READ IN FULL.
 - External design research: RECORDED.
-- Visual direction: PROPOSED; visual implementation not started.
+- Visual direction: proposed in the Field Atlas design document; the initial homepage composition and design tokens are now implemented, but visual browser QA remains outstanding.
 - Application architecture: RECORDED IN THIS DOCUMENT.
-- React Bits source directories: LOCATED; individual component research and integration remain NOT STARTED.
-- Supabase: SELECTED BY PRODUCT PLAN; not connected in this repository.
-- Route implementation: NOT STARTED.
-- UI redesign implementation: NOT STARTED.
+- React Bits: seven selected components are copied and rendered in their assigned initial locations; runtime interaction and desktop/mobile testing remain outstanding. The remaining 18 are NOT STARTED. See [the exact 25-component tracker](./REACT-BITS-INTEGRATION-TRACKER.md).
+- Supabase: selected by product plan; not connected in this repository.
+- Route implementation: initial shared shell and route skeleton implemented; feature-specific page experiences and data integrations remain pending.
+- UI redesign implementation: initial homepage and global shell implemented; all other page designs remain pending.
+- Production build: GitHub Actions passed for commit 59c1daa177948681cfeb80dc20056bbc2666a8dd. A later copy-link/Swipe Toast action change requires its own current-commit build result.
+- Desktop/mobile browser QA: NOT STARTED.
 - Netlify deployment verification: NOT STARTED.
 
-Do not report any NOT STARTED item as complete.
+Do not report any unverified interaction, page, component or deployment as complete.
