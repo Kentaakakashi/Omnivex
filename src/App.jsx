@@ -1,312 +1,202 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Activity, ArrowDown, ArrowRight, ArrowUpRight, BookOpen, Check,
-  ChevronDown, CircleDot, Layers3, Menu, MessageSquareText, Orbit,
-  Search, ShieldCheck, X
+  Activity, ArrowDown, ArrowLeftRight, ArrowRight, ArrowUpRight, Bookmark,
+  ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Compass, Flame, Globe2,
+  Menu, Search, ShieldCheck, Swords, Trophy, X, Zap
 } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 
-const universeItems = [
-  { id: "anime", label: "Anime & manga", count: "Character worlds", detail: "Follow canon, forms and feats across long-running stories.", symbol: "界", tone: "blue" },
-  { id: "comics", label: "Comics", count: "Many continuities", detail: "Separate runs, timelines, imprints and alternate versions.", symbol: "∞", tone: "silver" },
-  { id: "screen", label: "Film & television", count: "Screen universes", detail: "Track appearances, adaptations and on-screen evidence.", symbol: "◉", tone: "amber" },
-  { id: "games", label: "Games", count: "Playable universes", detail: "Characters, lore, equipment and game-specific versions.", symbol: "⌘", tone: "teal" },
-  { id: "myth", label: "Mythology", count: "Shared traditions", detail: "Explore source traditions without flattening their differences.", symbol: "✳", tone: "gold" },
-  { id: "creatures", label: "Creatures & more", count: "Beyond fiction", detail: "A growing home for extraordinary entities and open categories.", symbol: "◇", tone: "ice" }
+const media = {
+  spider: "https://commons.wikimedia.org/wiki/Special:FilePath/Spider-Man.jpg",
+  iron: "https://commons.wikimedia.org/wiki/Special:FilePath/Iron%20Man%20transparent%20background.png",
+  thanos: "https://commons.wikimedia.org/wiki/Special:FilePath/THANOS-Cosplay.jpg",
+  batman: "https://commons.wikimedia.org/wiki/Special:FilePath/PA%20comic%20convention%20Cosplay%20of%20Batman.jpg",
+  superman: "https://commons.wikimedia.org/wiki/Special:FilePath/Cosplayers%20as%20Superman%20and%20K%27Zuri%20the%20Unbound%20at%20L.A.%20Comic%20Con%202026.jpg"
+};
+
+const characters = [
+  { id: "spider", name: "SPIDER-MAN", universe: "MARVEL · EARTH-616", type: "Human / Mutate", location: "New York, Earth", height: "5′10″", weight: "76 kg", image: media.spider, accent: "red", description: "The friendly neighbourhood hero. A brilliant mind with extraordinary reflexes and a danger sense.", tags: ["Spider-sense", "Agility", "Web technology"] },
+  { id: "iron", name: "IRON MAN", universe: "MARVEL · EARTH-616", type: "Human · Armoured", location: "Malibu, Earth", height: "6′1″", weight: "102 kg", image: media.iron, accent: "gold", description: "Genius inventor whose armour systems turn preparation and engineering into extraordinary capability.", tags: ["Powered armour", "Engineering", "Repulsors"] },
+  { id: "batman", name: "BATMAN", universe: "DC · PRIME EARTH", type: "Human", location: "Gotham City, Earth", height: "6′2″", weight: "95 kg", image: media.batman, accent: "silver", description: "The Dark Knight. A strategist and detective whose preparation is as important as his physical skill.", tags: ["Strategy", "Detective", "Gadgets"] },
+  { id: "superman", name: "SUPERMAN", universe: "DC · PRIME EARTH", type: "Kryptonian", location: "Metropolis, Earth", height: "6′3″", weight: "107 kg", image: media.superman, accent: "blue", description: "A Kryptonian raised on Earth, with abilities shaped by Earth's yellow sun.", tags: ["Solar-powered", "Flight", "Super senses"] },
+  { id: "thanos", name: "THANOS", universe: "MARVEL · EARTH-616", type: "Eternal / Deviant", location: "Titan", height: "6′7″", weight: "447 kg", image: media.thanos, accent: "violet", description: "The Mad Titan: a formidable strategist with immense physical power and advanced technology.", tags: ["Titan physiology", "Strategy", "Technology"] }
 ];
 
-const searchEntries = [
-  { name: "Goku", universe: "Dragon Ball", category: "Anime & manga" },
-  { name: "Superman", universe: "DC Comics", category: "Comics" },
-  { name: "Godzilla", universe: "Toho", category: "Film & television" },
-  { name: "Wonder Woman", universe: "DC Comics", category: "Comics" },
-  { name: "Kratos", universe: "God of War", category: "Games" },
-  { name: "Thor", universe: "Norse mythology / Marvel", category: "Mythology · Comics" },
-  { name: "Anansi", universe: "Akan traditions", category: "Mythology" },
-  { name: "Cthulhu", universe: "Cthulhu Mythos", category: "Literature" }
+const matchups = [
+  { a: "DARKSEID", b: "THANOS", sub: "Apokolips vs Titan", status: "DEEP RESEARCH", votes: "12.8K", color: "orange", imageA: media.batman, imageB: media.thanos, note: "A study in cosmic power and continuity." },
+  { a: "BATMAN", b: "IRON MAN", sub: "Prep time · Standard equipment", status: "COMMUNITY DEBATE", votes: "8.4K", color: "blue", imageA: media.batman, imageB: media.iron, note: "Two minds. Two very different toolkits." },
+  { a: "SUPERMAN", b: "THOR", sub: "Prime Earth vs Earth-616", status: "EVIDENCE REVIEW", votes: "6.2K", color: "violet", imageA: media.superman, imageB: media.thanos, note: "Comparing source-backed capabilities." }
 ];
 
-const debates = [
-  { tag: "CONTINUITY", title: "When does a composite version stop being useful?", note: "A question about rules, not raw power", tone: "blue" },
-  { tag: "EVIDENCE", title: "Should a one-off outlier ever define a character?", note: "Bring context. Bring counter-feats.", tone: "amber" },
-  { tag: "METHODOLOGY", title: "What makes a source strong enough to verify a feat?", note: "Compare the evidence standards", tone: "teal" }
+const ranking = [
+  { n: "01", name: "Superman", universe: "DC · PRIME EARTH", type: "Kryptonian", delta: "+4", img: media.superman },
+  { n: "02", name: "Thor", universe: "MARVEL · EARTH-616", type: "Asgardian", delta: "+2", img: media.iron },
+  { n: "03", name: "Doctor Strange", universe: "MARVEL · EARTH-616", type: "Sorcerer", delta: "−1", img: media.spider },
+  { n: "04", name: "Wonder Woman", universe: "DC · PRIME EARTH", type: "Amazon", delta: "+3", img: media.batman },
 ];
+
+function Image({ src, alt, className = "" }) {
+  return <img className={className} src={src} alt={alt} loading="lazy" onError={e => { e.currentTarget.style.opacity = "0"; }} />;
+}
 
 function Brand() {
-  return (
-    <a className="brand" href="#top" aria-label="OMNIVEX home">
-      <span className="brand-mark" aria-hidden="true"><span className="brand-orbit brand-orbit--a" /><span className="brand-orbit brand-orbit--b" /><span className="brand-core" /></span>
-      <span className="brand-word">OMNIVEX<span className="brand-period">.</span><small>BEYOND EVERY UNIVERSE</small></span>
-    </a>
-  );
-}
-
-function Eyebrow({ children }) {
-  return <div className="eyebrow"><span className="eyebrow-dot" />{children}</div>;
-}
-
-function Reveal({ children, className = "", delay = 0 }) {
-  const reduceMotion = useReducedMotion();
-  return (
-    <motion.div className={className} initial={reduceMotion ? false : { opacity: 0, y: 22 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.14 }} transition={{ duration: 0.72, delay, ease: [0.22, 1, 0.36, 1] }}>
-      {children}
-    </motion.div>
-  );
+  return <a className="brand" href="#home"><span className="brand-symbol"><i /><i /><b /></span><span>OMNIVEX<small>BEYOND EVERY UNIVERSE</small></span></a>;
 }
 
 function Header({ onSearch }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const links = [["Discover", "#discover"], ["Matchups", "#matchup-studio"], ["The index", "#universes"], ["Method", "#method"], ["Community", "#community"]];
-  return (
-    <header className="site-header">
-      <div className="header-inner">
-        <Brand />
-        <nav className={"desktop-nav " + (menuOpen ? "desktop-nav--open" : "")} aria-label="Main navigation">
-          {links.map(([label, href]) => <a key={label} href={href} onClick={() => setMenuOpen(false)}>{label}</a>)}
-        </nav>
-        <div className="header-actions">
-          <button className="icon-button search-trigger" onClick={onSearch} aria-label="Search OMNIVEX"><Search size={17} /><span>Search</span><kbd>⌘ K</kbd></button>
-          <a className="header-cta" href="#matchup-studio">Open the studio <ArrowUpRight size={15} /></a>
-          <button className="mobile-menu-button" onClick={() => setMenuOpen(v => !v)} aria-label={menuOpen ? "Close menu" : "Open menu"}>{menuOpen ? <X /> : <Menu />}</button>
-        </div>
-      </div>
-    </header>
-  );
+  const [open, setOpen] = useState(false);
+  const links = [["Discover", "#discover"], ["Characters", "#characters"], ["Matchups", "#matchups"], ["Rankings", "#rankings"], ["Community", "#community"]];
+  return <header className="header">
+    <div className="header-main">
+      <button className="mobile-menu" onClick={() => setOpen(v => !v)} aria-label="Toggle menu">{open ? <X /> : <Menu />}</button>
+      <Brand />
+      <nav className={open ? "nav nav-open" : "nav"}>{links.map(([label, href]) => <a key={label} href={href} onClick={() => setOpen(false)}>{label}</a>)}</nav>
+      <div className="header-right"><button className="search-button" onClick={onSearch}><Search size={16} /><span>Search index</span><kbd>⌘ K</kbd></button><button className="avatar-button" aria-label="Profile">N</button></div>
+    </div>
+  </header>;
 }
 
-function SearchOverlay({ open, onClose }) {
+function SearchModal({ open, close }) {
   const [query, setQuery] = useState("");
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q ? searchEntries.filter(item => (item.name + " " + item.universe + " " + item.category).toLowerCase().includes(q)) : searchEntries.slice(0, 5);
+    return characters.filter(c => !q || (c.name + c.universe + c.type).toLowerCase().includes(q));
   }, [query]);
-
   useEffect(() => {
     if (!open) return;
-    const onKey = event => { if (event.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    const handler = e => { if (e.key === "Escape") close(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [open, close]);
+  return <AnimatePresence>{open && <motion.div className="modal-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={close}>
+    <motion.div className="search-modal" initial={{ opacity: 0, y: -18 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} onMouseDown={e => e.stopPropagation()}>
+      <div className="modal-input"><Search /><input autoFocus placeholder="Search characters, universes, matchups..." value={query} onChange={e => setQuery(e.target.value)} /><button onClick={close}><X /></button></div>
+      <div className="modal-caption">CHARACTER INDEX <span>{results.length} RESULTS</span></div>
+      {results.map(c => <button className="modal-result" key={c.id} onClick={() => { close(); document.getElementById("characters")?.scrollIntoView({ behavior: "smooth" }); }}><span>{c.name}</span><small>{c.universe}</small><ArrowUpRight size={16} /></button>)}
+      {!results.length && <p className="empty">No matching entries in this preview.</p>}
+    </motion.div>
+  </motion.div>}</AnimatePresence>;
+}
 
-  return (
-    <AnimatePresence>
-      {open && (
-        <motion.div className="search-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={onClose}>
-          <motion.div className="search-modal" role="dialog" aria-modal="true" aria-label="Search the OMNIVEX index" initial={{ opacity: 0, y: -14, scale: 0.98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -10, scale: 0.98 }} transition={{ duration: 0.2 }} onMouseDown={event => event.stopPropagation()}>
-            <div className="search-modal-input"><Search size={20} /><input autoFocus placeholder="Search a character, universe or matchup..." value={query} onChange={event => setQuery(event.target.value)} /><button onClick={onClose} aria-label="Close search"><X size={18} /></button></div>
-            <div className="search-modal-meta"><span>{query ? "MATCHING ENTRIES" : "START EXPLORING"}</span><span>ESC TO CLOSE</span></div>
-            <div className="search-results">
-              {results.length ? results.map(item => (
-                <button className="search-result" key={item.name} onClick={() => { onClose(); setQuery(""); }}>
-                  <span className="result-symbol"><CircleDot size={16} /></span><span className="result-copy"><strong>{item.name}</strong><small>{item.universe}</small></span><span className="result-category">{item.category}</span><ArrowUpRight size={15} />
-                </button>
-              )) : <div className="search-empty">No matching preview entries. Try a different name.</div>}
-            </div>
-            <div className="search-modal-foot"><span>THE OMNIVEX INDEX</span><span>Search previews are illustrative until the entity library is connected.</span></div>
-          </motion.div>
+function Hero({ character, onBuild }) {
+  return <section className="hero" id="home">
+    <div className="hero-glow hero-glow-red" /><div className="hero-glow hero-glow-blue" />
+    <div className="hero-grid-lines" />
+    <div className="hero-topline"><span><i className="live-dot" /> THE OMNIVEX CHARACTER INDEX</span><span>ISSUE 001 <b>/</b> EARLY ACCESS</span></div>
+    <div className="hero-content">
+      <div className="hero-info">
+        <div className="universe-label"><span className="marvel-mark">M</span> {character.universe}</div>
+        <motion.div key={character.id} initial={{ opacity: 0, x: -14 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: .25 }}>
+          <h1 className={"character-name accent-" + character.accent}>{character.name}</h1>
+          <p className="character-kicker">CHARACTER PROFILE <span>·</span> INDEX 000{characters.findIndex(c => c.id === character.id) + 1}</p>
+          <div className="character-facts">
+            <div><span className="fact-icon">✳</span><span>{character.type}</span></div>
+            <div><Globe2 /><span>{character.location}</span></div>
+            <div><Activity /><span>{character.height}</span></div>
+            <div><ShieldCheck /><span>{character.weight}</span></div>
+          </div>
+          <p className="character-description">{character.description}</p>
+          <div className="character-tags">{character.tags.map(tag => <span key={tag}>{tag}</span>)}</div>
+          <div className="hero-buttons"><a className="primary-button" href="#characters">Explore profile <ArrowUpRight size={16} /></a><button className="round-info" onClick={onBuild}><CircleHelp size={20} /><span>BUILD A MATCHUP</span></button></div>
         </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}
-
-function OrbitalScene() {
-  return (
-    <div className="orbital-scene" aria-label="Abstract orbital illustration">
-      <div className="scene-coordinate scene-coordinate--top">FIELD 07° 42′ N <span>·</span> SECTOR 001</div>
-      <div className="scene-stars" /><div className="scene-halo scene-halo--one" /><div className="scene-halo scene-halo--two" />
-      <div className="orbit-line orbit-line--one" /><div className="orbit-line orbit-line--two" /><div className="orbit-line orbit-line--three" />
-      <div className="planet planet--main"><div className="planet-shade" /><div className="planet-ridge" /></div>
-      <div className="planet planet--moon" /><div className="planet planet--tiny" />
-      <div className="scene-crosshair scene-crosshair--one" /><div className="scene-crosshair scene-crosshair--two" />
-      <div className="scene-label scene-label--main"><span>01 / PRIMARY BODY</span><strong>THE KNOWN</strong><small>One point in an infinite field</small></div>
-      <div className="scene-label scene-label--side"><span>02 / OUTER ORBIT</span><strong>THE UNKNOWN</strong></div>
-      <div className="scene-coordinate scene-coordinate--bottom">OBSERVATORY / OMNIVEX <span>·</span> EST. 001</div>
+      </div>
+      <div className="hero-character" key={character.id + "-art"}>
+        <div className="character-backdrop" />
+        <div className="character-frame" />
+        <Image src={character.image} alt={character.name + " visual reference"} className="hero-character-image" />
+        <div className="character-light character-light-red" /><div className="character-light character-light-blue" />
+        <div className="hero-art-caption"><span>FIG. 001</span><span>{character.name} / {character.universe.split(" · ")[0]}</span></div>
+      </div>
     </div>
-  );
+    <div className="hero-bottom"><span>SELECT A CHARACTER</span><span>SCROLL TO EXPLORE <ArrowDown size={13} /></span></div>
+  </section>;
 }
 
-function ComparisonStudio({ onPreview }) {
-  const [first, setFirst] = useState("Goku");
-  const [second, setSecond] = useState("Superman");
-  const [mode, setMode] = useState("Deep research");
-  const [version, setVersion] = useState("Choose versions later");
-  return (
-    <form className="studio-form" onSubmit={event => { event.preventDefault(); onPreview(first.trim(), second.trim(), mode, version); }}>
-      <div className="studio-form-head"><span className="form-index">01 — MATCHUP STUDIO</span><span className="form-status"><i /> CONFIGURATION PREVIEW</span></div>
-      <div className="studio-fields">
-        <label className="entity-input"><span>ENTITY A</span><div><CircleDot size={17} /><input value={first} onChange={event => setFirst(event.target.value)} placeholder="Search the first entity" /></div></label>
-        <span className="versus-mark">VS</span>
-        <label className="entity-input"><span>ENTITY B</span><div><CircleDot size={17} /><input value={second} onChange={event => setSecond(event.target.value)} placeholder="Search the second entity" /></div></label>
-        <button className="studio-submit" type="submit">Configure <ArrowUpRight size={17} /></button>
-      </div>
-      <div className="studio-options">
-        <label className="option-select"><span>ANALYSIS DEPTH</span><select value={mode} onChange={event => setMode(event.target.value)}><option>Deep research</option><option>Standard comparison</option><option>Quick overview</option><option>Evidence audit</option></select><ChevronDown size={14} /></label>
-        <label className="option-select option-select--wide"><span>VERSION RULE</span><select value={version} onChange={event => setVersion(event.target.value)}><option>Choose versions later</option><option>Specific continuity only</option><option>Composite — explicit opt-in</option><option>Canon-only evidence</option></select><ChevronDown size={14} /></label>
-        <p>Version and continuity choices matter. They are never silently combined.</p>
-      </div>
-    </form>
-  );
+function CharacterRail({ active, setActive }) {
+  return <section className="character-rail-section" id="characters">
+    <div className="rail-heading"><div><span className="section-overline">THE DATABASE</span><h2>Character <em>roster</em></h2></div><a href="#characters" className="subtle-link">VIEW ALL CHARACTERS <ArrowUpRight size={14} /></a></div>
+    <div className="character-rail">{characters.map((c, i) => <button key={c.id} className={"roster-card " + (active.id === c.id ? "roster-active" : "")} onClick={() => { setActive(c); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
+      <div className="roster-art"><Image src={c.image} alt="" /><span className="roster-index">0{i + 1}</span></div><div className="roster-copy"><strong>{c.name}</strong><small>{c.universe}</small></div><ArrowUpRight size={15} />
+    </button>)}</div>
+  </section>;
 }
 
-function UniverseCard({ item, index, selected, onSelect }) {
-  return (
-    <button className={"universe-card universe-card--" + item.tone + (selected ? " is-selected" : "")} onClick={() => onSelect(item.id)}>
-      <span className="universe-card-index">0{index + 1}</span><span className="universe-symbol">{item.symbol}</span>
-      <span className="universe-card-copy"><strong>{item.label}</strong><small>{item.count}</small></span><ArrowUpRight className="universe-arrow" size={18} /><span className="universe-card-line" />
-    </button>
-  );
-}
-
-function EvidenceDiagram() {
-  return (
-    <div className="evidence-diagram">
-      <div className="diagram-top"><span>HOW A VERDICT IS BUILT</span><span>MODEL / 01—04</span></div>
-      <div className="diagram-orbit">
-        <div className="diagram-ring diagram-ring--outer" /><div className="diagram-ring diagram-ring--inner" />
-        <div className="diagram-node diagram-node--a"><BookOpen size={17} /><span>SOURCE</span></div>
-        <div className="diagram-node diagram-node--b"><Layers3 size={17} /><span>CONTEXT</span></div>
-        <div className="diagram-node diagram-node--c"><ShieldCheck size={17} /><span>REVIEW</span></div>
-        <div className="diagram-center"><span>O</span><small>EVIDENCE</small></div>
-        <span className="diagram-point diagram-point--one" /><span className="diagram-point diagram-point--two" />
-      </div>
-      <div className="diagram-foot"><span>NO SOURCE, NO CLAIM.</span><span>01 / 03</span></div>
+function MatchupCard({ item, index, onOpen }) {
+  return <button className={"matchup-card matchup-" + item.color} onClick={() => onOpen(item)}>
+    <div className="matchup-card-top"><span className="matchup-status"><i />{item.status}</span><span>0{index + 1}</span></div>
+    <div className="matchup-versus-art">
+      <div className="matchup-person person-a"><Image src={item.imageA} alt={item.a} /></div><span className="versus-badge">VS</span><div className="matchup-person person-b"><Image src={item.imageB} alt={item.b} /></div>
     </div>
-  );
+    <div className="matchup-card-info"><div><h3>{item.a} <span>VS</span> {item.b}</h3><p>{item.sub}</p></div><ArrowUpRight size={18} /></div>
+    <div className="matchup-card-foot"><span><Activity size={13} /> {item.votes} ACTIVE VOTES</span><span>OPEN MATCHUP <ArrowRight size={13} /></span></div>
+  </button>;
 }
 
-function Toast({ message, onClose }) {
-  return (
-    <AnimatePresence>
-      {message && <motion.div className="toast" role="status" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}><span className="toast-icon"><Check size={16} /></span><span>{message}</span><button onClick={onClose} aria-label="Dismiss notification"><X size={15} /></button></motion.div>}
-    </AnimatePresence>
-  );
+function Matchups({ onOpen }) {
+  return <section className="matchups-section" id="matchups"><div className="section-head"><div><span className="section-overline">THE ARENA</span><h2>Choose your <em>side.</em></h2><p>Explore the matchups everyone is talking about. Evidence first, opinions welcome.</p></div><a className="outline-button" href="#studio">Create matchup <Swords size={16} /></a></div>
+    <div className="matchup-grid">{matchups.map((m, i) => <MatchupCard key={m.a} item={m} index={i} onOpen={onOpen} />)}</div>
+  </section>;
+}
+
+function Studio({ onToast }) {
+  const [a, setA] = useState("Spider-Man"); const [b, setB] = useState("Batman");
+  const [version, setVersion] = useState("Specific versions");
+  return <section className="studio-section" id="studio"><div className="studio-heading"><span className="section-overline">YOUR BATTLE. YOUR RULES.</span><h2>Set the <em>matchup.</em></h2><p>Choose the contenders and define the conditions before the analysis begins.</p></div>
+    <div className="studio-panel"><div className="studio-panel-top"><span><Swords size={16} /> MATCHUP CONFIGURATION</span><span>PREVIEW MODE <i /></span></div>
+      <div className="studio-selectors"><label><small>CONTENDER A</small><select value={a} onChange={e => setA(e.target.value)}>{["Spider-Man","Superman","Batman","Iron Man","Thanos"].map(x => <option key={x}>{x}</option>)}</select></label><div className="studio-vs">VS</div><label><small>CONTENDER B</small><select value={b} onChange={e => setB(e.target.value)}>{["Batman","Thanos","Iron Man","Superman","Spider-Man"].map(x => <option key={x}>{x}</option>)}</select></label></div>
+      <div className="studio-controls"><label><small>CONTINUITY RULE</small><select value={version} onChange={e => setVersion(e.target.value)}><option>Specific versions</option><option>Canon only</option><option>Composite (opt-in)</option></select><ChevronDown /></label><label><small>ANALYSIS DEPTH</small><select><option>Deep research</option><option>Standard comparison</option><option>Quick overview</option><option>Evidence audit</option></select><ChevronDown /></label><button className="primary-button" onClick={() => onToast(a === b ? "Choose two different contenders." : a + " vs " + b + " · " + version + " configured in preview.")}>Configure matchup <ArrowUpRight size={16} /></button></div>
+      <div className="studio-foot"><span><ShieldCheck size={14} /> CONTINUITY-AWARE BY DESIGN</span><span>Research and saved matchups will connect when the Battle Engine is implemented.</span></div>
+    </div>
+  </section>;
+}
+
+function Rankings() {
+  return <section className="rankings-section" id="rankings"><div className="section-head"><div><span className="section-overline">THE POWER INDEX</span><h2>Trending <em>entities.</em></h2><p>Popularity is not the same as power. We keep those signals separate.</p></div><a className="subtle-link" href="#rankings">EXPLORE RANKINGS <ArrowUpRight size={14} /></a></div>
+    <div className="ranking-layout"><div className="ranking-feature"><div className="ranking-feature-bg" /><span className="feature-tag"><Flame size={13} /> FASTEST RISING</span><div className="ranking-feature-copy"><small>01 / DC · PRIME EARTH</small><h3>SUPERMAN</h3><p>One of the most searched entities this week.</p><span className="trend-up">↗ 18.6% SEARCH INTEREST</span></div><Image src={media.superman} alt="Superman cosplay reference" /></div>
+      <div className="ranking-list">{ranking.map((r, i) => <div className="ranking-row" key={r.n}><span className="rank-number">{r.n}</span><div className="rank-thumb"><Image src={r.img} alt="" /></div><div className="rank-copy"><strong>{r.name}</strong><small>{r.universe}</small></div><span className="rank-type">{r.type}</span><span className={r.delta.startsWith("+") ? "rank-delta positive" : "rank-delta"}>{r.delta}</span></div>)}</div>
+    </div>
+  </section>;
+}
+
+function Community() {
+  const topics = [
+    ["CONTINUITY", "Can composite versions ever produce a fair comparison?", "38 replies · updated 4 min ago"],
+    ["EVIDENCE", "How should outlier feats be weighted against consistent showings?", "24 replies · updated 18 min ago"],
+    ["METHODOLOGY", "What makes a source strong enough to verify a feat?", "16 replies · updated 42 min ago"]
+  ];
+  return <section className="community-section" id="community"><div className="section-head"><div><span className="section-overline">THE COMMUNITY</span><h2>Debate the <em>details.</em></h2><p>Bring your argument. Bring the source. Leave room to be convinced.</p></div><a className="outline-button" href="#community">Enter debate arena <ArrowUpRight size={15} /></a></div>
+    <div className="community-grid"><div className="community-feature"><div className="community-feature-visual"><div className="community-glow" /><div className="community-monogram">OX</div><span>OPEN DISCUSSION / 001</span></div><div className="community-feature-copy"><span className="section-overline">FEATURED DISCUSSION</span><h3>What does a <em>good argument</em> look like?</h3><p>Explore how evidence, context and counterarguments make a debate worth having.</p><a href="#community">Join the conversation <ArrowUpRight size={15} /></a></div></div>
+      <div className="topic-list">{topics.map((t, i) => <a className="topic-row" href="#community" key={t[1]}><span className="topic-index">0{i + 1}</span><div><small>{t[0]}</small><h3>{t[1]}</h3><p>{t[2]}</p></div><ArrowUpRight size={17} /></a>)}</div></div>
+  </section>;
+}
+
+function Footer() {
+  return <footer className="footer"><div className="footer-main"><Brand /><p>A universe-spanning character index, built for curious minds and better debates.</p><div className="footer-links"><a href="#characters">Characters</a><a href="#matchups">Matchups</a><a href="#rankings">Rankings</a><a href="#community">Community</a></div><a href="#home" className="back-top">BACK TO TOP ↑</a></div><div className="footer-bottom"><span>© 2026 OMNIVEX. INDEPENDENT FAN PROJECT.</span><span>CHARACTER IMAGERY IS ILLUSTRATIVE. RIGHTS REMAIN WITH THEIR OWNERS.</span></div></footer>;
 }
 
 export default function App() {
+  const [active, setActive] = useState(characters[0]);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [activeUniverse, setActiveUniverse] = useState("anime");
   const [toast, setToast] = useState("");
-
+  const [selectedMatch, setSelectedMatch] = useState(null);
+  const notify = message => { setToast(message); window.setTimeout(() => setToast(""), 3600); };
   useEffect(() => {
-    const onKey = event => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        setSearchOpen(true);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const key = e => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setSearchOpen(true); } };
+    window.addEventListener("keydown", key); return () => window.removeEventListener("keydown", key);
   }, []);
-
-  const notify = message => {
-    setToast(message);
-    window.setTimeout(() => setToast(""), 4200);
-  };
-
-  const previewMatchup = (first, second, mode, version) => {
-    if (!first || !second) return notify("Add an entity on both sides to configure a matchup.");
-    if (first.toLowerCase() === second.toLowerCase()) return notify("Choose two different entities to continue.");
-    notify("Preview configured: " + first + " vs " + second + " · " + mode + " · " + version + ".");
-  };
-
-  const activeUniverseItem = universeItems.find(item => item.id === activeUniverse) || universeItems[0];
-
-  return (
-    <div className="app-shell" id="top">
-      <div className="topline"><span>AN INDEX WITHOUT BORDERS</span><span className="topline-center"><i /> THE OBSERVATORY IS TAKING SHAPE</span><span>VOL. 001 <span className="topline-divider">/</span> EARLY EDITION</span></div>
-      <Header onSearch={() => setSearchOpen(true)} />
-      <main>
-        <section className="hero-section" id="discover">
-          <div className="hero-backdrop" />
-          <div className="hero-grid">
-            <div className="hero-copy">
-              <Eyebrow>THE UNIVERSE IS BIGGER THAN THE DEBATE</Eyebrow>
-              <h1>Every universe<br />has <em>another</em><br /><span>side.</span></h1>
-              <p className="hero-description">A living index for the extraordinary. Compare entities, trace the evidence, and explore the worlds behind every story.</p>
-              <div className="hero-actions"><a className="button button--light" href="#matchup-studio">Build a comparison <ArrowUpRight size={16} /></a><a className="text-link" href="#universes">Explore the index <ArrowDown size={15} /></a></div>
-              <button className="hero-search" onClick={() => setSearchOpen(true)}><Search size={17} /><span>Search characters, universes, matchups...</span><kbd>⌘ K</kbd></button>
-              <div className="hero-footnote"><span>01 / 04</span><span>COMPARE <i /> INVESTIGATE <i /> DISCOVER</span></div>
-            </div>
-            <div className="hero-art"><OrbitalScene /></div>
-          </div>
-          <div className="hero-bottom-rule"><span>AN OPEN FIELD OF POSSIBILITY</span><span>SCROLL TO EXPLORE <ArrowDown size={13} /></span></div>
-        </section>
-
-        <section className="studio-section section-shell" id="matchup-studio">
-          <Reveal className="section-heading section-heading--compact">
-            <div><Eyebrow>THE FIRST QUESTION</Eyebrow><h2>Start with <em>two.</em></h2></div>
-            <p>Set the boundaries before you compare. A meaningful matchup begins with the right versions, conditions and sources.</p>
-          </Reveal>
-          <Reveal delay={0.08}><ComparisonStudio onPreview={previewMatchup} /></Reveal>
-          <div className="studio-note"><span><ShieldCheck size={14} /> CONTINUITY-AWARE BY DESIGN</span><span>This is a front-end preview. Research and saved matchups will connect when the engine is implemented.</span></div>
-        </section>
-
-        <section className="manifesto-section">
-          <div className="manifesto-inner">
-            <Reveal className="manifesto-label"><Eyebrow>NOT JUST ANOTHER TIER LIST</Eyebrow><span className="manifesto-number">01—03</span></Reveal>
-            <Reveal className="manifesto-copy" delay={0.08}><h2>Big questions deserve<br />better <em>receipts.</em></h2><p>OMNIVEX is built around a simple idea: the conclusion should never outrun the evidence. A place where curiosity can go deep—and disagreements can stay honest.</p><a href="#method" className="inline-arrow">How we think <ArrowUpRight size={16} /></a></Reveal>
-            <Reveal className="manifesto-orbit" delay={0.14}><div className="manifesto-planet" /><div className="manifesto-ring manifesto-ring--a" /><div className="manifesto-ring manifesto-ring--b" /><span>BEYOND<br />THE KNOWN</span></Reveal>
-          </div>
-        </section>
-
-        <section className="universes-section section-shell" id="universes">
-          <Reveal className="section-heading"><div><Eyebrow>THE INDEX / A GROWING ATLAS</Eyebrow><h2>Find your <em>universe.</em></h2></div><p>Different worlds have different rules. Explore each on its own terms, with room for versions, timelines and source traditions.</p></Reveal>
-          <div className="universe-layout">
-            <div className="universe-list">{universeItems.map((item, index) => <UniverseCard key={item.id} item={item} index={index} selected={activeUniverse === item.id} onSelect={setActiveUniverse} />)}</div>
-            <Reveal className={"universe-detail universe-detail--" + activeUniverseItem.tone}>
-              <div className="universe-detail-top"><span>SELECTED DOMAIN / 0{universeItems.findIndex(item => item.id === activeUniverse) + 1}</span><span><Orbit size={15} /> EXPLORATION MODE</span></div>
-              <div className="universe-detail-visual"><div className="domain-globe"><span>{activeUniverseItem.symbol}</span></div><div className="domain-orbit domain-orbit--one" /><div className="domain-orbit domain-orbit--two" /><span className="domain-coordinate">INDEX / {activeUniverseItem.id.toUpperCase()}</span></div>
-              <div className="universe-detail-copy"><span>{activeUniverseItem.count}</span><h3>{activeUniverseItem.label}</h3><p>{activeUniverseItem.detail}</p><a href="#method" className="inline-arrow">Explore the framework <ArrowUpRight size={16} /></a></div>
-            </Reveal>
-          </div>
-          <div className="section-tail"><span>MORE WORLDS WILL FIND THEIR PLACE HERE.</span><span>THE INDEX IS DESIGNED TO GROW <ArrowUpRight size={14} /></span></div>
-        </section>
-
-        <section className="method-section" id="method">
-          <div className="method-inner section-shell">
-            <Reveal className="method-intro"><Eyebrow>THE METHOD / BUILT TO BE QUESTIONED</Eyebrow><h2>Evidence first.<br /><em>Certainty second.</em></h2><p>A verdict is not a fact just because it sounds confident. OMNIVEX separates what a source shows, what someone interprets, and what remains unknown.</p><a href="#community" className="inline-arrow">See how debate works <ArrowUpRight size={16} /></a></Reveal>
-            <Reveal className="method-visual" delay={0.1}><EvidenceDiagram /></Reveal>
-            <div className="method-steps">
-              <Reveal className="method-step"><span>01</span><div><strong>Trace the source</strong><p>Every claim should lead back to a specific issue, chapter, scene, text or reliable reference.</p></div><BookOpen size={19} /></Reveal>
-              <Reveal className="method-step" delay={0.06}><span>02</span><div><strong>Keep the context</strong><p>Version, continuity, conditions, limitations and counter-evidence stay attached to the claim.</p></div><Layers3 size={19} /></Reveal>
-              <Reveal className="method-step" delay={0.12}><span>03</span><div><strong>Show the uncertainty</strong><p>Canon outcomes, evidence-based predictions and inconclusive cases are never blended together.</p></div><ShieldCheck size={19} /></Reveal>
-            </div>
-          </div>
-        </section>
-
-        <section className="community-section section-shell" id="community">
-          <Reveal className="section-heading"><div><Eyebrow>THE HUMAN SIDE OF THE INDEX</Eyebrow><h2>Bring your <em>argument.</em></h2></div><p>Strong communities do more than vote. They bring sources, challenge assumptions and make the shared record better.</p></Reveal>
-          <div className="community-layout">
-            <Reveal className="community-feature">
-              <div className="community-feature-top"><span><MessageSquareText size={16} /> THE DEBATE FLOOR</span><span>COMMUNITY / 001</span></div>
-              <div className="community-feature-art"><div className="debate-orbit debate-orbit--one" /><div className="debate-orbit debate-orbit--two" /><div className="debate-core"><span>≠</span></div><span className="debate-caption debate-caption--a">CLAIM</span><span className="debate-caption debate-caption--b">COUNTERCLAIM</span></div>
-              <div className="community-feature-copy"><h3>Disagreement is useful.<br /><em>Good faith makes it better.</em></h3><p>Structured arguments, linked evidence, clear corrections and a community verdict that stays separate from the research engine.</p><a href="#matchup-studio" className="inline-arrow">Enter the conversation <ArrowUpRight size={16} /></a></div>
-            </Reveal>
-            <div className="debate-list">
-              {debates.map((debate, index) => <Reveal key={debate.title} className={"debate-row debate-row--" + debate.tone} delay={index * 0.06}><span className="debate-index">0{index + 1}</span><div><span className="debate-tag">{debate.tag}</span><h3>{debate.title}</h3><p>{debate.note}</p></div><ArrowUpRight size={18} /></Reveal>)}
-              <div className="community-footnote"><span><Activity size={15} /> COMMUNITY FEATURES / IN DESIGN</span><span>Thoughtful contributions over noise.</span></div>
-            </div>
-          </div>
-        </section>
-
-        <section className="closing-section">
-          <div className="closing-stars" />
-          <Reveal className="closing-copy"><Eyebrow>THE FIELD IS OPEN</Eyebrow><h2>Look a little<br /><em>further.</em></h2><p>There is always another version. Another source. Another perspective worth exploring.</p><a href="#matchup-studio" className="button button--light">Enter OMNIVEX <ArrowUpRight size={16} /></a></Reveal>
-          <div className="closing-orbit closing-orbit--one" /><div className="closing-orbit closing-orbit--two" /><div className="closing-world" />
-          <div className="closing-coordinate">OMNIVEX / OBSERVATORY <span>·</span> 001</div>
-        </section>
-      </main>
-
-      <footer className="site-footer">
-        <div className="footer-main"><Brand /><p>An open index for comparison,<br />evidence, discovery and debate.</p>
-          <div className="footer-links"><div><span>EXPLORE</span><a href="#universes">The index</a><a href="#matchup-studio">Matchup studio</a><a href="#community">Community</a></div><div><span>PRINCIPLES</span><a href="#method">Evidence standards</a><a href="#method">Continuity matters</a><a href="#method">Open questions</a></div></div>
-          <a className="back-top" href="#top">BACK TO THE TOP <ArrowUpRight size={15} /></a>
-        </div>
-        <div className="footer-bottom"><span>© 2026 OMNIVEX. AN OPEN FIELD OF POSSIBILITY.</span><span>BUILT FOR THE CURIOUS <span className="footer-star">✳</span></span><span>INDEPENDENT PROJECT · NOT AFFILIATED WITH ANY FRANCHISE</span></div>
-      </footer>
-      <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
-      <Toast message={toast} onClose={() => setToast("")} />
-    </div>
-  );
+  const openMatch = item => { setSelectedMatch(item); notify(item.a + " vs " + item.b + " selected · report preview is not connected yet."); };
+  return <div className="app" id="discover">
+    <Header onSearch={() => setSearchOpen(true)} />
+    <main><Hero character={active} onBuild={() => document.getElementById("studio")?.scrollIntoView({ behavior: "smooth" })} />
+      <CharacterRail active={active} setActive={setActive} />
+      <Matchups onOpen={openMatch} />
+      <Studio onToast={notify} />
+      <Rankings />
+      <Community />
+      <section className="final-cta"><div><span className="section-overline">THE INDEX IS OPEN</span><h2>Every story has<br />another <em>side.</em></h2><p>Find the character. Set the rules. Follow the evidence wherever it leads.</p><a href="#studio" className="primary-button">Start a matchup <ArrowUpRight size={16} /></a></div><div className="final-cta-mark">O<span>X</span></div></section>
+    </main><Footer />
+    <SearchModal open={searchOpen} close={() => setSearchOpen(false)} />
+    <AnimatePresence>{toast && <motion.div className="toast" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 10 }}><span className="toast-pulse" />{toast}<button onClick={() => setToast("")}><X size={15} /></button></motion.div>}</AnimatePresence>
+    <AnimatePresence>{selectedMatch && <motion.div className="match-drawer-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelectedMatch(null)}><motion.div className="match-drawer" initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 30, opacity: 0 }} onClick={e => e.stopPropagation()}><button className="drawer-close" onClick={() => setSelectedMatch(null)}><X /></button><span className="section-overline">MATCHUP PREVIEW</span><h2>{selectedMatch.a} <em>VS</em> {selectedMatch.b}</h2><p>{selectedMatch.note}</p><div className="drawer-status"><ShieldCheck size={16} /> This is a visual preview. No verdict has been generated.</div></motion.div></motion.div>}</AnimatePresence>
+  </div>;
 }
