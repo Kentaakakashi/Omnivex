@@ -1,12 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Tabs from "@radix-ui/react-tabs";
 import { Command } from "cmdk";
 import { AnimatePresence, motion } from "motion/react";
 import {
   Activity, ArrowRight, ArrowUpRight, Bookmark, Check, ChevronDown,
-  ChevronRight, CircleHelp, Clock3, Compass, Flame, Globe2, Menu,
-  MessageCircle, Search, ShieldCheck, Sparkles, Activity, Trophy, Users, X, Zap
+  ChevronRight, CircleHelp, Compass, Flame, Globe, Menu, Search,
+  ShieldCheck, Trophy, Users, X
 } from "lucide-react";
 
 import { Marquee } from "./components/magicui/Marquee.jsx";
@@ -159,7 +159,7 @@ function Hero({ onStart, onSelect }) {
           <a className="text-link" href="#characters">Explore the index <ArrowRight size={15} /></a>
         </div>
         <div className="hero-principles">
-          <span><ShieldCheck size={14} /> Evidence-led</span><span><Globe2 size={14} /> Continuity-aware</span><span><Users size={14} /> Community-driven</span>
+          <span><ShieldCheck size={14} /> Evidence-led</span><span><Globe size={14} /> Continuity-aware</span><span><Users size={14} /> Community-driven</span>
         </div>
       </div>
       <div className="hero-feature">
@@ -214,7 +214,7 @@ function CharacterIndex({ active, setActive, onNotify }) {
     <div className="character-grid">{characters.map((c, i) => <CharacterCard key={c.id} character={c} index={i} active={active.id === c.id} onClick={() => setActive(c)} />)}</div>
     <div className="selected-profile">
       <div className="selected-art"><Art character={active} contain /></div>
-      <div className="selected-copy"><span className="section-kicker">SELECTED PROFILE / {active.continuity.toUpperCase()}</span><h3>{active.name}</h3><p>{active.summary}</p><div className="ability-tags">{active.abilities.map(x => <span key={x}>{x}</span>)}</div><div className="selected-meta"><span><Globe2 size={14} /> {active.universe}</span><span><ShieldCheck size={14} /> {active.category}</span></div></div>
+      <div className="selected-copy"><span className="section-kicker">SELECTED PROFILE / {active.continuity.toUpperCase()}</span><h3>{active.name}</h3><p>{active.summary}</p><div className="ability-tags">{active.abilities.map(x => <span key={x}>{x}</span>)}</div><div className="selected-meta"><span><Globe size={14} /> {active.universe}</span><span><ShieldCheck size={14} /> {active.category}</span></div></div>
       <div className="selected-action"><span>PROFILE PREVIEW</span><button onClick={() => onNotify("Full entity dossiers, verified feats and version histories are planned for the research milestone.")}>View dossier <ArrowUpRight size={16} /></button></div>
     </div>
   </section>;
@@ -335,7 +335,7 @@ function Events({ onNotify }) {
 function IntegrityStrip() {
   return <section className="integrity-strip">
     <div className="integrity-intro"><span className="section-kicker">THE OMNIVEX STANDARD</span><h2>Strong claims.<br /><em>Stronger evidence.</em></h2><p>Canon outcomes, evidence-based predictions and inconclusive findings should never be confused.</p></div>
-    <div className="integrity-points"><div><span>01</span><ShieldCheck size={19} /><div><strong>Sources stay visible</strong><small>Every important claim should be traceable.</small></div></div><div><span>02</span><Globe2 size={19} /><div><strong>Versions stay separate</strong><small>Continuity is part of the question.</small></div></div><div><span>03</span><CircleHelp size={19} /><div><strong>Uncertainty is allowed</strong><small>Inconclusive is better than invented certainty.</small></div></div></div>
+    <div className="integrity-points"><div><span>01</span><ShieldCheck size={19} /><div><strong>Sources stay visible</strong><small>Every important claim should be traceable.</small></div></div><div><span>02</span><Globe size={19} /><div><strong>Versions stay separate</strong><small>Continuity is part of the question.</small></div></div><div><span>03</span><CircleHelp size={19} /><div><strong>Uncertainty is allowed</strong><small>Inconclusive is better than invented certainty.</small></div></div></div>
   </section>;
 }
 
