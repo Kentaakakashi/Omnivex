@@ -192,6 +192,13 @@ Do not skip or collapse the sequence defined by the master prompt:
 
 ### React Bits implementation tracker
 
+The complete, current 25-component checklist is maintained in [REACT-BITS-INTEGRATION-TRACKER.md](./REACT-BITS-INTEGRATION-TRACKER.md). That file is the authoritative tracker for official URLs, research/source status, dependencies, integration, functionality, data connection and desktop/mobile verification.
+
+The first implementation slice contains seven rendered component integrations. Their browser interaction tests and visual desktop/mobile verification remain outstanding. The remaining 18 components are not started.
+
+A component may only be marked **VERIFIED** after it is rendered in its assigned page, its defining behaviour is tested, its real route/action/data binding works, and desktop/mobile behaviour has been checked.
+
+
 All components are currently **NOT STARTED** in the OMNIVEX application. Locating their upstream source directories is not the same as researching, installing, integrating or verifying them.
 
 | # | Component | Assigned placement | Research | Source | Integrated | Functional | Data connected | Desktop verified | Mobile verified |
