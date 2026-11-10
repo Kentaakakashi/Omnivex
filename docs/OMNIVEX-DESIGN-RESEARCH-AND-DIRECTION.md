@@ -194,39 +194,6 @@ Do not skip or collapse the sequence defined by the master prompt:
 
 The complete, current 25-component checklist is maintained in [REACT-BITS-INTEGRATION-TRACKER.md](./REACT-BITS-INTEGRATION-TRACKER.md). That file is the authoritative tracker for official URLs, research/source status, dependencies, integration, functionality, data connection and desktop/mobile verification.
 
-The first implementation slice contains seven rendered component integrations. Their browser interaction tests and visual desktop/mobile verification remain outstanding. The remaining 18 components are not started.
-
-A component may only be marked **VERIFIED** after it is rendered in its assigned page, its defining behaviour is tested, its real route/action/data binding works, and desktop/mobile behaviour has been checked.
-
-
-All components are currently **NOT STARTED** in the OMNIVEX application. Locating their upstream source directories is not the same as researching, installing, integrating or verifying them.
-
-| # | Component | Assigned placement | Research | Source | Integrated | Functional | Data connected | Desktop verified | Mobile verified |
-|---:|---|---|---|---|---|---|---|---|---|
-| 01 | Pixel Blast | Homepage hero | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 02 | Accordion Gallery | Featured universes | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 03 | Carousel | Homepage spotlight | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 04 | Laser Flow | Featured matchup | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 05 | Drift Wall | Discover visual wall | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 06 | Chroma Grid | Character directory | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 07 | Flowing Menu | Universe explorer | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 08 | Infinite Menu | Related character explorer | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 09 | Pill Nav | Desktop navigation | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 10 | Staggered Menu | Mobile navigation | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 11 | Line Sidebar | Character profile navigation | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 12 | Dock | Character contextual actions | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 13 | Stepper | Matchup creation | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 14 | Option Wheel | Matchup conditions | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 15 | Scroll Stack | Published matchup breakdown | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 16 | Card Swap | Evidence highlights | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 17 | Folder | Character source vault | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 18 | Folder Float | Personal research notebook | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 19 | Branched Menu | Evidence relationship navigator | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 20 | Border Glow | Selected evidence highlights | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 21 | Animated List | Ranking activity | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 22 | Swipe Row | Saved library | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 23 | Swipe Toast | Global feedback | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 24 | Bell Toggle | Follow notifications | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
-| 25 | Pulse Heart | Community reactions | NOT STARTED | LOCATED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED | NOT STARTED |
+The first implementation slice contains seven rendered component integrations. Their live browser interactions and visual desktop/mobile verification remain outstanding. The remaining 18 components are not started.
 
 A component may only be marked **VERIFIED** after it is rendered in its assigned page, its defining behaviour is tested, its real route/action/data binding works, and desktop/mobile behaviour has been checked.
