@@ -1,7 +1,7 @@
 # OMNIVEX — React Bits 25-Component Implementation Tracker
 
 Date: 2026-11-10  
-Branch: \`field-atlas-redesign\`  
+Branch: `field-atlas-redesign`  
 Source of truth: the uploaded OMNIVEX Component Integration Specification.
 
 ## Status rules
@@ -16,7 +16,7 @@ Source files copied into the repository or a green production build do not indep
 
 ## Current implementation snapshot
 
-The first seven selected components have been copied from the official React Bits source and placed in the initial Field Atlas application shell/homepage. The latest fully verified build at the time this tracker was created is commit \`59c1daa177948681cfeb80dc20056bbc2666a8dd\`; a later change wiring the copy-link action into Swipe Toast is being built and must receive its own result before its build is marked successful.
+The first seven selected components have been copied from the official React Bits source and placed in the initial Field Atlas application shell/homepage. The latest fully verified build at the time this tracker was created is commit `59c1daa177948681cfeb80dc20056bbc2666a8dd`; a later change wiring the copy-link action into Swipe Toast is being built and must receive its own result before its build is marked successful.
 
 The source repository tree and implementation were inspected for the seven copied components. The official React Bits documentation pages were opened, but the browser reader did not expose their live preview contents. A true visual comparison against the live previews and a rendered desktop/mobile browser test remain outstanding.
 
@@ -52,10 +52,10 @@ The source repository tree and implementation were inspected for the seven copie
 
 ## Shared dependencies added for the first integration slice
 
-- \`react-router@8.0.1\` — URL-based routing.
-- \`gsap\` — required by the selected Accordion Gallery and Staggered Menu originals.
-- \`@hugeicons/react\` and \`@hugeicons/core-free-icons\` — required by Carousel and Swipe Toast.
-- \`motion\` — already present in the application and used by Swipe Toast.
+- `react-router@8.0.1` — URL-based routing.
+- `gsap` — required by the selected Accordion Gallery and Staggered Menu originals.
+- `@hugeicons/react` and `@hugeicons/core-free-icons` — required by Carousel and Swipe Toast.
+- `motion` — already present in the application and used by Swipe Toast.
 
 ## Acceptance gate before marking any component VERIFIED
 
