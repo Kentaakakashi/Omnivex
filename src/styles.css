@@ -116,9 +116,8 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .magic-card:hover .magic-card-spotlight { opacity: 1; }
 .magic-card-content { position: relative; z-index: 1; display: block; height: 100%; }
 .magic-border-beam { position: absolute; z-index: 8; inset: 0; overflow: hidden; border-radius: inherit; pointer-events: none; }
-.magic-border-beam::before { content: ''; position: absolute; inset: -70%; background: conic-gradient(from 0deg, transparent 0 76%, rgba(239,74,91,.03) 79%, rgba(235,91,102,.9) 82%, rgba(92,151,244,.85) 85%, transparent 89%); animation: border-beam-spin 7s linear infinite; }
-.magic-border-beam::after { content: ''; position: absolute; inset: 1px; background: transparent; border-radius: inherit; }
-.magic-border-beam i { position: absolute; inset: 1px; background: transparent; border: 1px solid transparent; border-radius: inherit; }
+.magic-border-beam::before { content: ''; position: absolute; inset: 0; padding: 1px; border-radius: inherit; background: conic-gradient(from 0deg, transparent 0 78%, rgba(239,74,91,.85) 83%, rgba(92,151,244,.85) 87%, transparent 92%); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; animation: border-beam-spin 8s linear infinite; }
+.magic-border-beam::after, .magic-border-beam i { display: none; }
 @keyframes border-beam-spin { to { transform: rotate(360deg); } }
 .number-ticker { font-variant-numeric: tabular-nums; }
 
@@ -153,7 +152,7 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 
 /* Character index */
 .character-section { padding-top: 84px; }
-.character-grid { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: 11px; }
+.character-grid { display: grid; grid-template-columns: repeat(7, minmax(0,1fr)); gap: 11px; }
 .roster-card { min-width: 0; height: 260px; transition: transform .24s ease, border-color .24s ease; }
 .roster-card:hover { transform: translateY(-4px); border-color: rgba(175,198,229,.34); }
 .roster-card-active { border-color: rgba(230,81,96,.6); }
