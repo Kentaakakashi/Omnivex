@@ -211,7 +211,7 @@ function CharacterCard({ character, index, active, onClick }) {
 function CharacterIndex({ active, setActive, onNotify }) {
   return <section className="section-block character-section" id="characters">
     <div className="section-header"><div><span className="section-kicker">01 / THE DATABASE</span><h2>Meet the <em>contenders.</em></h2><p>Profiles are organised by identity, universe and exact continuity. Select one to inspect its overview.</p></div><button className="section-link" onClick={() => onNotify("The searchable entity library will expand as verified profiles are added.")}>Browse full index <ArrowUpRight size={15} /></button></div>
-    <div className="character-grid">{characters.slice(0, 6).map((c, i) => <CharacterCard key={c.id} character={c} index={i} active={active.id === c.id} onClick={() => setActive(c)} />)}</div>
+    <div className="character-grid">{characters.map((c, i) => <CharacterCard key={c.id} character={c} index={i} active={active.id === c.id} onClick={() => setActive(c)} />)}</div>
     <div className="selected-profile">
       <div className="selected-art"><Art character={active} contain /></div>
       <div className="selected-copy"><span className="section-kicker">SELECTED PROFILE / {active.continuity.toUpperCase()}</span><h3>{active.name}</h3><p>{active.summary}</p><div className="ability-tags">{active.abilities.map(x => <span key={x}>{x}</span>)}</div><div className="selected-meta"><span><Globe2 size={14} /> {active.universe}</span><span><ShieldCheck size={14} /> {active.category}</span></div></div>
