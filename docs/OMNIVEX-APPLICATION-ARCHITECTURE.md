@@ -353,7 +353,7 @@ All journeys need real route transitions, correct state updates and explicit loa
 - Supabase: selected by product plan; not connected in this repository.
 - Route implementation: initial shared shell and route skeleton implemented; feature-specific page experiences and data integrations remain pending.
 - UI redesign implementation: initial homepage and global shell implemented; all other page designs remain pending.
-- Production build: GitHub Actions passed for commit 59c1daa177948681cfeb80dc20056bbc2666a8dd. A later copy-link/Swipe Toast action change requires its own current-commit build result.
+- Production build: GitHub Actions passed for application-code commit 4ec0edf0e9ab9881474f31886842b60f127fd04a (run 42876433018). Documentation-only commits followed; their latest CI run was still in progress at the time of this update.
 - Desktop/mobile browser QA: NOT STARTED.
 - Netlify deployment verification: NOT STARTED.
 
