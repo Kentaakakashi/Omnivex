@@ -38,3 +38,23 @@ The frontend uses React, Motion, Lucide React, Radix UI Dialog, Radix UI Tabs an
 - cmdk: https://github.com/pacocoursey/cmdk
 
 No component source from React Bits or Aceternity UI is copied into this repository.
+
+
+## React Bits
+
+The following official React Bits source components are integrated in the redesign branch:
+
+- Pill Nav — https://reactbits.dev/components/pill-nav
+- Staggered Menu — https://reactbits.dev/components/staggered-menu
+- Swipe Toast — https://reactbits.dev/micro/swipe-toast
+
+Source repository: https://github.com/DavidHDev/react-bits
+Copyright (c) 2026 David Haz
+License: MIT + Commons Clause License Condition v1.0. The source license is preserved in licenses/REACT_BITS_LICENSE.md. React Bits source may be used as part of the OMNIVEX application/product; the components themselves must not be sold, sublicensed or redistributed on their own, in a bundle, or as a ported version. A small application-integration callback was added to Staggered Menu so its original animated menu can navigate through OMNIVEX routes; its underlying animated implementation and appearance remain the React Bits component.
+
+## Added runtime dependencies
+
+- GSAP: https://gsap.com/ (used by Staggered Menu)
+- Hugeicons React: https://github.com/hugeicons/hugeicons-react (used by Swipe Toast)
+- Hugeicons Core Free Icons: https://github.com/hugeicons/hugeicons (used by Swipe Toast)
+- React Router: https://reactrouter.com/ (client-side route foundation)
