@@ -6,7 +6,7 @@ import { AnimatePresence, motion } from "motion/react";
 import {
   Activity, ArrowRight, ArrowUpRight, Bookmark, Check, ChevronDown,
   ChevronRight, CircleHelp, Clock3, Compass, Flame, Globe2, Menu,
-  MessageCircle, Search, ShieldCheck, Sparkles, Swords, Trophy, Users, X, Zap
+  MessageCircle, Search, ShieldCheck, Sparkles, Activity, Trophy, Users, X, Zap
 } from "lucide-react";
 
 import { Marquee } from "./components/magicui/Marquee.jsx";
@@ -32,7 +32,7 @@ const characters = [
   { id: "batman", name: "Batman", display: "BATMAN", universe: "DC Comics", continuity: "Prime Earth", role: "The Dark Knight", species: "Human", image: image.batman, accent: "silver", abilities: ["Detective mastery", "Strategy", "Specialised gear"], summary: "A detective and tactician whose preparation, equipment and environment matter to any fair comparison.", category: "Comics" },
   { id: "superman", name: "Superman", display: "SUPERMAN", universe: "DC Comics", continuity: "Prime Earth", role: "The Man of Steel", species: "Kryptonian", image: image.superman, accent: "blue", abilities: ["Solar-powered physiology", "Flight", "Super senses"], summary: "A Kryptonian whose powers are shaped by solar energy, continuity and the conditions of a given story.", category: "Comics" },
   { id: "thanos", name: "Thanos", display: "THANOS", universe: "Marvel Comics", continuity: "Earth-616", role: "The Mad Titan", species: "Titanian Eternal", image: image.thanos, accent: "violet", abilities: ["Titan physiology", "Cosmic technology", "Tactical intellect"], summary: "A formidable strategist whose equipment and continuity must be specified before assessing a matchup.", category: "Comics" },
-  { id: "thor", name: "Thor", display: "THOR", universe: "Marvel Comics", continuity: "Earth-616", role: "The God of Thunder", species: "Asgardian", image: image.thor, accent: "blue", abilities: ["Storm control", "Godly strength", "Mjolnir"], summary: "An Asgardian warrior with a long history of changing powers, weapons and forms.", category: "Comics" },
+  { id: "thor", name: "Thor", display: "THOR", universe: "Marvel Comics", continuity: "Earth-616", role: "The God of Thunder", species: "Asgardian", image: image.thor, accent: "blue", abilities: ["Storm control", "Godly strength", "Thunder channeling"], summary: "An Asgardian warrior with a long history of changing powers, weapons and forms.", category: "Comics" },
   { id: "strange", name: "Doctor Strange", display: "DOCTOR STRANGE", universe: "Marvel Comics", continuity: "Earth-616", role: "Master of the Mystic Arts", species: "Human", image: image.strange, accent: "gold", abilities: ["Mystic arts", "Dimensional knowledge", "Protective spells"], summary: "A sorcerer whose abilities depend on knowledge, preparation, artefacts and the rules of the story.", category: "Comics" }
 ];
 
@@ -253,7 +253,7 @@ function Studio({ onNotify }) {
   return <section className="studio-section" id="studio">
     <div className="studio-intro"><span className="section-kicker">03 / MATCHUP STUDIO</span><h2>Set the rules.<br /><em>Then compare.</em></h2><p>Every matchup starts with a better question. Choose the versions, define the conditions and keep the assumptions visible.</p><div className="studio-points"><span><Check size={14} /> Specific versions</span><span><Check size={14} /> Transparent conditions</span><span><Check size={14} /> Room for inconclusive</span></div></div>
     <div className="studio-panel">
-      <div className="studio-panel-head"><div><Swords size={17} /><span>MATCHUP CONFIGURATION</span></div><span className="preview-status"><i /> FRONTEND PREVIEW</span></div>
+      <div className="studio-panel-head"><div><Activity size={17} /><span>MATCHUP CONFIGURATION</span></div><span className="preview-status"><i /> FRONTEND PREVIEW</span></div>
       <div className="studio-contenders">
         <label className="contender-select"><span>CONTENDER A</span><div className="select-art"><Art character={first} contain /><select value={a} onChange={e => setA(e.target.value)}>{characters.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select><ChevronDown size={15} /></div><small>{first.universe} · {first.continuity}</small></label>
         <div className="studio-versus">VS</div>
@@ -322,7 +322,7 @@ function DebateArena({ onNotify }) {
 
 function Events({ onNotify }) {
   const events = [
-    { tag: "WEEKLY", name: "The Weekly Showdown", detail: "A community-selected matchup with a full evidence thread.", icon: <Swords size={20} /> },
+    { tag: "WEEKLY", name: "The Weekly Showdown", detail: "A community-selected matchup with a full evidence thread.", icon: <Activity size={20} /> },
     { tag: "RESEARCH", name: "Evidence Hunt", detail: "Find the missing source, context or counter-feat.", icon: <Search size={20} /> },
     { tag: "COMMUNITY", name: "Universe Cup", detail: "A bracket-style celebration of different fictional worlds.", icon: <Trophy size={20} /> }
   ];
