@@ -4,52 +4,50 @@
 
 OMNIVEX is a universal comparison, research, evidence, discovery, rankings and community platform. It is designed to connect entities, versions, universes, sources, matchups and community contributions.
 
-## Development branches
+## Current application
 
-- `main` remains the previously working frontend baseline.
-- `field-atlas-redesign` is the active implementation branch for the new **Multiverse Field Atlas** design and routed application architecture. It is deliberately separate while the new pages and all required components are being implemented and verified.
+The `main` branch now contains the Multiverse Field Atlas implementation. The earlier `field-atlas-redesign` branch is preserved at the same prior commit as a recovery point.
 
-## Current implementation status
+The application currently includes:
+- React 19 + Vite 8 with React Router 8 and a responsive shared navigation shell.
+- The editorial Field Atlas homepage.
+- Routed discovery, entity directory, universe hubs, entity dossiers, matchup setup and report pages, evidence explorer/detail, rankings, community, personal space, saved library and private research notebook.
+- Supabase browser client and email/password auth integration, configured through environment variables.
+- A Supabase database schema with entity/version, source/evidence, capability/feat, matchup/report, debate/reaction, follow/save, note, notification, event, ranking and moderation structures.
+- All 25 React Bits components integrated in their assigned locations. See [the implementation tracker](./docs/REACT-BITS-INTEGRATION-TRACKER.md).
 
-The redesign branch currently contains:
-- A React 19 + Vite 8 app with URL-based routes and a shared desktop/mobile navigation shell.
-- A new homepage direction using Pixel Blast, Accordion Gallery, Carousel and Laser Flow in their assigned roles.
-- The official React Bits Pill Nav, Staggered Menu and Swipe Toast integrations.
-- Route scaffolds for discovery, characters, entities, universes, matchup creation/reports, evidence, rankings, community, events, member profiles and personal areas.
-- An explicit 25-component status tracker in [docs/REACT-BITS-INTEGRATION-TRACKER.md](./docs/REACT-BITS-INTEGRATION-TRACKER.md).
+## Build vs. runtime status
 
-**Only seven of the 25 required React Bits components have been copied and placed so far.** Their runtime interactions and desktop/mobile appearances still need browser testing. The other 18 have not been integrated.
+The production build verifies compilation and bundling only. Browser interaction, visual desktop/mobile QA, authenticated database operations and Netlify deployment must be tested separately. All React Bits entries are currently marked **INTEGRATED**; their interaction and desktop/mobile acceptance tests remain **NOT VERIFIED**.
 
-The visible homepage imagery is temporary Wikimedia Commons cosplay photography and historical sculpture photography, not official character artwork. See [IMAGE_CREDITS.md](./IMAGE_CREDITS.md).
+Pages load records from Supabase rather than filling empty catalogues with invented entities, scores or discussions. Until the Supabase publishable key is added and the schema has been applied, database-backed pages will not display live data.
 
-## What is not connected yet
+## Supabase setup
 
-- Supabase client, database schema, Row Level Security, authentication and persistent user data.
-- A real entity/version catalogue and production search.
-- Evidence records, source verification and the Battle Engine.
-- Community posts, reactions, subscriptions, collections, private notes and notifications.
-- Live ranking datasets and event/tournament data.
-- Full functional page experiences beyond the current homepage and route scaffolds.
-- Desktop/mobile browser visual QA and Netlify deployment verification.
+The project URL is configured as:
 
-The route scaffolds label missing systems rather than pretending that demonstration data is live. The Battle Engine must not invent sources, feats, verdicts or confidence values.
+`https://brbeqauwzvuruvjdjnud.supabase.co`
+
+Add these environment variables to the deployment:
+- `VITE_SUPABASE_URL` — the project URL above.
+- `VITE_SUPABASE_PUBLISHABLE_KEY` — the project's publishable key from Supabase Settings → API Keys.
+
+Never put a `service_role` key or Supabase secret key in a `VITE_` variable or any browser bundle. The schema is in [supabase/schema.sql](./supabase/schema.sql). It still needs to be applied to the intended Supabase project and checked with RLS/security advisors; remote installation has not been confirmed from this repository workflow.
 
 ## Stack
 
 - React 19 + Vite 8
 - React Router 8
-- GSAP (Accordion Gallery and Staggered Menu)
-- Motion for React
-- Hugeicons React + Core Free Icons (Carousel and Swipe Toast)
-- Lucide React
-- Radix UI Dialog and Tabs
-- cmdk
+- Supabase JS client
+- GSAP, Motion for React
+- Hugeicons React + Core Free Icons
+- Matter.js (Folder Float physics)
+- Lucide React, Radix UI, cmdk
 - Official React Bits source integrations
 - Custom Field Atlas CSS
 - Netlify static hosting configuration
-- Supabase selected for the backend; not yet connected in the redesign branch
 
-React Bits attribution and the MIT + Commons Clause source license are preserved in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) and [licenses/REACT_BITS_LICENSE.md](./licenses/REACT_BITS_LICENSE.md).
+React Bits attribution and the MIT + Commons Clause source license are preserved in [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md) and [licenses/REACT_BITS_LICENSE.md](./licenses/REACT_BITS_LICENSE.md). Do not sell, sublicense or redistribute the components as standalone source.
 
 ## Run locally
 
@@ -58,16 +56,11 @@ Requires Node.js 22.22.0 or newer.
     npm install
     npm run dev
 
-Build and preview:
+Production build:
 
     npm run build
-    npm run preview
 
-## Netlify
-
-The included `netlify.toml` configures `npm run build`, publishes `dist`, uses Node 22.22.0 and routes client-side paths to `index.html`.
-
-The production build on GitHub Actions has passed for the redesign branch. This does not mean that the branch has been deployed to Netlify or visually verified in a browser.
+Netlify uses `npm run build`, publishes `dist`, and has an SPA redirect configured in `netlify.toml`. Hosting deployment has not been claimed as verified unless a deployment run confirms it.
 
 ## Project documents
 
@@ -83,7 +76,7 @@ The production build on GitHub Actions has passed for the redesign branch. This 
 2. Separate canon-confirmed outcomes from hypothetical predictions.
 3. Make evidence, sources, context and counter-evidence traceable.
 4. Allow inconclusive results.
-5. Never fabricate source references, feats, ranking movement or engagement statistics.
+5. Never fabricate sources, feats, verdicts, rankings or engagement counts.
 6. Distinguish popularity from capability and evidence quality.
 7. Keep saves, follows, reactions and formal votes as separate user actions.
 8. Protect private user data with owner-scoped access control.
