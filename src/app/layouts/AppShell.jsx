@@ -1,4 +1,4 @@
-import React from "react";
+import React, { Suspense } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router";
 import { ArrowUpRight, LogIn } from "lucide-react";
 import PillNav from "../../components/react-bits/navigation/PillNav.jsx";
@@ -83,7 +83,7 @@ export default function AppShell() {
         </div>
       </header>
 
-      <main className="site-main"><Outlet /></main>
+      <main className="site-main"><Suspense fallback={<div className="atlas-loading" role="status">Loading Field Atlas modules…</div>}><Outlet /></Suspense></main>
       <footer className="site-footer">
         <Link className="footer-brand" to="/">OMNIVEX <span>×</span></Link>
         <p>Explore widely. Compare carefully. Follow the evidence.</p>

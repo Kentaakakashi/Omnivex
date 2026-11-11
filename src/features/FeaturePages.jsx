@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { lazy, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import {
   ArrowLeft, ArrowRight, ArrowUpRight, BookmarkPlus, BookOpen, Check,
@@ -6,28 +6,30 @@ import {
   Globe2, Layers3, LogIn, NotebookPen, Plus, Search, Share2, ShieldCheck,
   Sparkles, Swords, Users, X
 } from "lucide-react";
-import DriftWall from "../components/react-bits/galleries/DriftWall.jsx";
-import ChromaGrid from "../components/react-bits/galleries/ChromaGrid.jsx";
-import FlowingMenu from "../components/react-bits/navigation/FlowingMenu.jsx";
-import InfiniteMenu from "../components/react-bits/galleries/InfiniteMenu.jsx";
-import LineSidebar from "../components/react-bits/navigation/LineSidebar.jsx";
-import Dock from "../components/react-bits/navigation/Dock.jsx";
-import Stepper, { Step } from "../components/react-bits/workflows/Stepper.jsx";
-import OptionWheel from "../components/react-bits/workflows/OptionWheel.jsx";
-import ScrollStack, { ScrollStackItem } from "../components/react-bits/surfaces/ScrollStack.jsx";
-import CardSwap, { Card } from "../components/react-bits/surfaces/CardSwap.jsx";
-import Folder from "../components/react-bits/surfaces/Folder.jsx";
-import FolderFloat from "../components/react-bits/micro/FolderFloat.jsx";
-import BranchedMenu from "../components/react-bits/micro/BranchedMenu.jsx";
-import BorderGlow from "../components/react-bits/surfaces/BorderGlow.jsx";
-import AnimatedList from "../components/react-bits/lists/AnimatedList.jsx";
-import SwipeRow from "../components/react-bits/micro/SwipeRow.jsx";
-import BellToggle from "../components/react-bits/micro/BellToggle.jsx";
-import PulseHeart from "../components/react-bits/micro/PulseHeart.jsx";
 import { supabase } from "../lib/supabase.js";
 import { useAuth } from "../app/providers/AuthProvider.jsx";
 import { useToast } from "../app/providers/ToastProvider.jsx";
 
+const DriftWall = lazy(() => import("../components/react-bits/galleries/DriftWall.jsx"));
+const ChromaGrid = lazy(() => import("../components/react-bits/galleries/ChromaGrid.jsx"));
+const FlowingMenu = lazy(() => import("../components/react-bits/navigation/FlowingMenu.jsx"));
+const InfiniteMenu = lazy(() => import("../components/react-bits/galleries/InfiniteMenu.jsx"));
+const LineSidebar = lazy(() => import("../components/react-bits/navigation/LineSidebar.jsx"));
+const Dock = lazy(() => import("../components/react-bits/navigation/Dock.jsx"));
+const Stepper = lazy(() => import("../components/react-bits/workflows/Stepper.jsx"));
+const Step = lazy(() => import("../components/react-bits/workflows/Stepper.jsx").then(module => ({ default: module.Step })));
+const OptionWheel = lazy(() => import("../components/react-bits/workflows/OptionWheel.jsx"));
+const ScrollStack = lazy(() => import("../components/react-bits/surfaces/ScrollStack.jsx"));
+const ScrollStackItem = lazy(() => import("../components/react-bits/surfaces/ScrollStack.jsx").then(module => ({ default: module.ScrollStackItem })));
+const CardSwap = lazy(() => import("../components/react-bits/surfaces/CardSwap.jsx"));
+const Folder = lazy(() => import("../components/react-bits/surfaces/Folder.jsx"));
+const FolderFloat = lazy(() => import("../components/react-bits/micro/FolderFloat.jsx"));
+const BranchedMenu = lazy(() => import("../components/react-bits/micro/BranchedMenu.jsx"));
+const BorderGlow = lazy(() => import("../components/react-bits/surfaces/BorderGlow.jsx"));
+const AnimatedList = lazy(() => import("../components/react-bits/lists/AnimatedList.jsx"));
+const SwipeRow = lazy(() => import("../components/react-bits/micro/SwipeRow.jsx"));
+const BellToggle = lazy(() => import("../components/react-bits/micro/BellToggle.jsx"));
+const PulseHeart = lazy(() => import("../components/react-bits/micro/PulseHeart.jsx"));
 const textures = [
   "https://images.unsplash.com/photo-1519681393784-d120267933ba?w=900&q=80&auto=format&fit=crop",
   "https://images.unsplash.com/photo-1462331940025-496dfbfc7564?w=900&q=80&auto=format&fit=crop",
