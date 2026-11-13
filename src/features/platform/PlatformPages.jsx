@@ -85,6 +85,7 @@ function RecordCard({ record, type = "entity", to }) {
   const imageAllowed = Boolean(
     record.artwork_url &&
     record.artwork_source_url &&
+    record.artwork_approval_status === "approved" &&
     ["public_domain", "cc0", "cc_by", "cc_by_sa", "licensed", "publisher_authorized", "user_owned"]
       .includes(record.artwork_use_basis)
   );
@@ -151,6 +152,41 @@ export function ExplorePage() {
   const activeTab = useActiveTab("all");
   const [search, setSearch] = useState(new URLSearchParams(location.search).get("q") || "");
   const [sort, setSort] = useState("recent");
+  const [mediaByEntity, setMediaByEntity] = useState({});
+  useEffect(() => {
+    let active = true;
+    if (!supabase || !entities.length) {
+      setMediaByEntity({});
+      return () => { active = false; };
+    }
+    (async () => {
+      const { data: versionRows } = await supabase.from("entity_versions")
+        .select("id,entity_id").in("entity_id", entities.map(item => item.id));
+      const versions = versionRows || [];
+      if (!versions.length) { if (active) setMediaByEntity({}); return; }
+      const versionToEntity = new Map(versions.map(item => [item.id, item.entity_id]));
+      const { data: mediaRows } = await supabase.from("entity_media")
+        .select("entity_version_id,asset_url,source_url,usage_basis,approval_status,is_primary,alt_text")
+        .in("entity_version_id", versions.map(item => item.id))
+        .eq("approval_status", "approved").eq("is_primary", true);
+      if (!active) return;
+      const mediaMap = {};
+      (mediaRows || []).forEach(item => {
+        const entityId = versionToEntity.get(item.entity_version_id);
+        if (entityId && !mediaMap[entityId]) {
+          mediaMap[entityId] = {
+            artwork_url: item.asset_url,
+            artwork_source_url: item.source_url,
+            artwork_use_basis: item.usage_basis,
+            artwork_approval_status: item.approval_status,
+            artwork_alt_text: item.alt_text
+          };
+        }
+      });
+      setMediaByEntity(mediaMap);
+    })();
+    return () => { active = false; };
+  }, [entities]);
   const tabs = [
     { value: "all", label: "Everything" },
     { value: "characters", label: "Characters" },
@@ -243,7 +279,7 @@ export function ExplorePage() {
               </div>
               {filteredEntities.length ? (
                 <div className="platform-card-grid">
-                  {filteredEntities.map(item => <RecordCard key={item.id} record={item} type={(item.entity_type || "ENTITY").toUpperCase()} to={"/entity/" + item.slug} />)}
+                  {filteredEntities.map(item => <RecordCard key={item.id} record={{ ...item, ...(mediaByEntity[item.id] || {}) }} type={(item.entity_type || "ENTITY").toUpperCase()} to={"/entity/" + item.slug} />)}
                 </div>
               ) : <EmptyState title={entities.length ? "No records match those filters" : "The index is waiting for its first records"} body={entities.length ? "Try another search term or select Everything." : "The catalogue will populate when real entity and version records are added. The preview does not invent character profiles."} />}
             </section>
@@ -266,6 +302,7 @@ export function EntityDossierPage() {
   const [capabilities, setCapabilities] = useState([]);
   const [evidence, setEvidence] = useState([]);
   const [sources, setSources] = useState([]);
+  const [versionMedia, setVersionMedia] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -290,15 +327,18 @@ export function EntityDossierPage() {
   }, [entitySlug, versionSlug]);
   useEffect(() => {
     let active = true;
-    if (!supabase || !activeVersion) { setCapabilities([]); setEvidence([]); setSources([]); return () => { active = false; }; }
+    if (!supabase || !activeVersion) { setCapabilities([]); setEvidence([]); setSources([]); setVersionMedia(null); return () => { active = false; }; }
     (async () => {
-      const [capResult, evidenceResult] = await Promise.all([
+      const [capResult, evidenceResult, mediaResult] = await Promise.all([
         supabase.from("capabilities").select("*").eq("entity_version_id", activeVersion.id).order("capability_name"),
-        supabase.from("evidence_records").select("*").eq("entity_version_id", activeVersion.id).order("created_at", { ascending: false }).limit(40)
+        supabase.from("evidence_records").select("*").eq("entity_version_id", activeVersion.id).order("created_at", { ascending: false }).limit(40),
+        supabase.from("entity_media").select("asset_url,source_url,usage_basis,approval_status,alt_text,source_title,attribution_text")
+          .eq("entity_version_id", activeVersion.id).eq("approval_status", "approved").eq("is_primary", true).maybeSingle()
       ]);
       if (!active) return;
       setCapabilities(capResult.data || []);
       setEvidence(evidenceResult.data || []);
+      setVersionMedia(mediaResult.data || null);
       if (capResult.error || evidenceResult.error) setError(capResult.error?.message || evidenceResult.error?.message || "");
       const ids = [...new Set((evidenceResult.data || []).map(item => item.source_record_id).filter(Boolean))];
       if (ids.length) {
@@ -315,8 +355,13 @@ export function EntityDossierPage() {
     else if (saveError) showToast({ title: "Could not save entity", description: saveError.message });
     else showToast("Saved to your library.");
   };
-  const chosenArtwork = activeVersion || entity || {};
-  const artworkAllowed = Boolean(chosenArtwork.artwork_url && chosenArtwork.artwork_source_url && chosenArtwork.artwork_use_basis);
+  const allowedMediaBases = ["public_domain", "cc0", "cc_by", "cc_by_sa", "licensed", "publisher_authorized", "user_owned"];
+  const artworkAllowed = Boolean(
+    versionMedia?.asset_url &&
+    versionMedia?.source_url &&
+    versionMedia?.approval_status === "approved" &&
+    allowedMediaBases.includes(versionMedia?.usage_basis)
+  );
   if (loading) return <div className="atlas-feature-page"><LoadingLine>Opening entity dossier…</LoadingLine></div>;
   if (!entity) return <div className="atlas-feature-page"><EmptyState title="Entity record not found" body={supabase ? "This slug does not resolve to a public entity record." : "Add the Supabase publishable key to load the catalogue."} action={<Link className="atlas-button atlas-button--dark" to="/explore">Back to Explore</Link>} /></div>;
 
@@ -330,7 +375,7 @@ export function EntityDossierPage() {
           <div className="platform-meta-row"><MetaPill>{entity.status}</MetaPill><MetaPill>{versions.length} VERSION RECORDS</MetaPill><MetaPill>ID {entity.id.slice(0, 8).toUpperCase()}</MetaPill></div>
         </div>
         <div className="platform-detail-art">
-          {artworkAllowed ? <img src={chosenArtwork.artwork_url} alt={entity.name + " official character artwork"} /> : <div className="platform-art-placeholder platform-art-placeholder--large"><span>{entity.name.slice(0, 2).toUpperCase()}</span><small>VERSION-MATCHED ARTWORK PENDING</small></div>}
+          {artworkAllowed ? <img src={versionMedia.asset_url} alt={versionMedia.alt_text || (entity.name + " version artwork")} /> : <div className="platform-art-placeholder platform-art-placeholder--large"><span>{entity.name.slice(0, 2).toUpperCase()}</span><small>VERSION-MATCHED ARTWORK PENDING</small></div>}
         </div>
       </div>
       <DataNotice error={error} />
