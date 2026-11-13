@@ -170,7 +170,7 @@ export function ExplorePage() {
       (aliasRows || []).forEach(item => { (aliasMap[item.entity_id] ||= []).push(item.alias); });
       setAliasesByEntity(aliasMap);
       const { data: versionRows } = await supabase.from("entity_versions")
-        .select("id,entity_id").in("entity_id", entityIds);
+        .select("id,entity_id").in("entity_id", entityIds).eq("is_primary_version", true);
       const versions = versionRows || [];
       if (!versions.length) { if (active) setMediaByEntity({}); return; }
       const versionToEntity = new Map(versions.map(item => [item.id, item.entity_id]));
