@@ -729,7 +729,7 @@ export function MatchupDetailPage() {
                   <ul className="platform-report-points">{report.report_body.analysis[key].map((item,index)=><li key={index}>{item}</li>)}</ul>
                 </section>
               ) : null)}
-              <p className="platform-form-note">Report integrity: {report.report_body?.analysis_completeness?.status || "pending"}. Unsupported claims used: {report.report_body?.analysis_completeness?.unsupported_claims_used ?? "not reported"}. This report is a reproducible research snapshot, not a canon-confirmed outcome.</p>
+              <p className="platform-form-note">Report integrity: {report.analysis_completeness?.status || "pending"}. Unsupported claims used: {report.analysis_completeness?.unsupported_claims_used ?? "not reported"}. This report is a reproducible research snapshot, not a canon-confirmed outcome.</p>
             </>
           ) : <EmptyState title="No analysis report exists yet" body="Run the Battle Engine to generate a report. Without verified evidence on both sides, it will store an explicit inconclusive result instead of inventing a winner." />}
         </section>
