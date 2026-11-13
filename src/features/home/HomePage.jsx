@@ -41,7 +41,7 @@ function useHomeRecords() {
       let entityRows = entities.data || [];
       if (entityRows.length) {
         const { data: versionRows } = await supabase.from("entity_versions")
-          .select("id,entity_id").in("entity_id", entityRows.map(item => item.id));
+          .select("id,entity_id").in("entity_id", entityRows.map(item => item.id)).eq("is_primary_version", true);
         const versions = versionRows || [];
         if (versions.length) {
           const versionToEntity = new Map(versions.map(item => [item.id, item.entity_id]));
