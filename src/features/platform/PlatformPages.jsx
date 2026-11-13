@@ -758,10 +758,13 @@ export function MatchupDetailPage() {
 }
 
 export function ResearchPage() {
-  const { rows: evidence, loading: evidenceLoading, error: evidenceError } = useRows("evidence_records", "created_at", 240);
+  const { rows: evidence, loading: evidenceLoading, error: evidenceError, refresh: refreshEvidence } = useRows("evidence_records", "created_at", 240);
   const { rows: sources, loading: sourcesLoading, error: sourcesError, refresh: refreshSources } = useRows("source_records", "created_at", 200);
-  const { rows: relations, loading: relationsLoading, error: relationsError } = useRows("evidence_relations", "created_at", 240);
+  const { rows: relations, loading: relationsLoading, error: relationsError, refresh: refreshRelations } = useRows("evidence_relations", "created_at", 240);
+  const { rows: capabilities, loading: capabilitiesLoading, error: capabilitiesError, refresh: refreshCapabilities } = useRows("capabilities", "created_at", 240);
   const [relationEvidence, setRelationEvidence] = useState({});
+  const [moderatingKey, setModeratingKey] = useState("");
+  const isModerator = ["moderator", "admin"].includes(user?.app_metadata?.omnivex_role);
   const activeTab = useActiveTab("discover");
   const { user } = useAuth();
   const { showToast } = useToast();
@@ -779,6 +782,35 @@ export function ResearchPage() {
   const filteredEvidence = evidence.filter(item => [item.summary, item.context, item.evidence_type, item.review_status].join(" ").toLowerCase().includes(query.toLowerCase()) && (review === "all" || item.review_status === review));
   const filteredSources = sources.filter(item => [item.title, item.publisher_or_host, item.locator, item.source_type].join(" ").toLowerCase().includes(query.toLowerCase()));
   const filteredRelations = relations.filter(item => [item.relation_type, item.review_status, item.note].join(" ").toLowerCase().includes(query.toLowerCase()) && (review === "all" || item.review_status === review));
+  const queueItems = [
+    ...evidence.filter(item => ["submitted", "needs_review", "disputed"].includes(item.review_status)).map(item => ({ id:item.id, kind:"evidence", status:item.review_status, title:item.summary, detail:item.context, date:item.created_at })),
+    ...capabilities.filter(item => ["submitted", "needs_review", "disputed"].includes(item.status)).map(item => ({ id:item.id, kind:"capability", status:item.status, title:item.capability_name, detail:item.mechanism || item.dimension, date:item.created_at })),
+    ...relations.filter(item => ["submitted", "needs_review", "disputed"].includes(item.review_status)).map(item => ({ id:item.id, kind:"relation", status:item.review_status, title:(relationEvidence[item.from_evidence_id] || "Evidence") + " ↔ " + (relationEvidence[item.to_evidence_id] || "Related evidence"), detail:item.relation_type + " · " + (item.note || ""), date:item.created_at })),
+    ...sources.filter(item => ["submitted", "needs_review", "disputed"].includes(item.review_status)).map(item => ({ id:item.id, kind:"source", status:item.review_status, title:item.title, detail:item.publisher_or_host || item.url, date:item.created_at }))
+  ].filter(item => [item.title,item.detail,item.status,item.kind].join(" ").toLowerCase().includes(query.toLowerCase()) && (review === "all" || item.status === review)).sort((x,y)=>new Date(y.date || 0)-new Date(x.date || 0));
+
+  const reviewRecord = async (item, nextStatus) => {
+    if (!isModerator || !user) return;
+    setModeratingKey(item.kind + ":" + item.id);
+    const table = { evidence:"evidence_records", capability:"capabilities", relation:"evidence_relations", source:"source_records" }[item.kind];
+    const statusColumn = item.kind === "capability" ? "status" : "review_status";
+    const patch = { [statusColumn]: nextStatus };
+    if (item.kind === "evidence" || item.kind === "relation") {
+      patch.reviewed_by = user.id;
+      patch.reviewed_at = new Date().toISOString();
+    }
+    const { error: updateError } = await supabase.from(table).update(patch).eq("id", item.id);
+    if (updateError) showToast({ title:"Review action failed", description:updateError.message });
+    else {
+      showToast(item.kind + " marked " + nextStatus.replace(/_/g," ") + ".");
+      if (item.kind === "evidence") { refreshEvidence(); }
+      if (item.kind === "capability") refreshCapabilities();
+      if (item.kind === "relation") refreshRelations();
+      if (item.kind === "source") refreshSources();
+    }
+    setModeratingKey("");
+  };
+
   const tabs = [{ value: "discover", label: "Discover online" }, { value: "evidence", label: "Evidence" }, { value: "sources", label: "Source library" }, { value: "relations", label: "Relationships" }, { value: "queue", label: "Review queue" }];
 
   useEffect(() => {
@@ -940,7 +972,7 @@ export function ResearchPage() {
             <label className="platform-search-field"><Search size={16} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={activeTab === "sources" ? "Search source title, publisher or locator…" : activeTab === "relations" ? "Search relationship type, review state or note…" : "Search evidence claims and context…"} /></label>
             {activeTab !== "sources" && <label className="platform-sort"><Filter size={15} /><select value={review} onChange={event => setReview(event.target.value)}><option value="all">All review states</option><option value="submitted">Submitted</option><option value="needs_review">Needs review</option><option value="verified">Verified</option><option value="disputed">Disputed</option><option value="rejected">Rejected</option><option value="outdated">Outdated</option></select></label>}
           </div>
-          <DataNotice error={evidenceError || sourcesError || relationsError} />
+          <DataNotice error={evidenceError || sourcesError || relationsError || capabilitiesError} />
           {activeTab === "sources" ? (
             sourcesLoading ? <LoadingLine>Loading source library…</LoadingLine> : filteredSources.length ? <div className="platform-list">{filteredSources.map(item => <Link className="platform-list-row" key={item.id} to={"/research/source/" + item.id}><span><strong>{item.title}</strong><small>{item.publisher_or_host || item.source_type} · {item.reliability_grade || "NOT GRADED"} · {item.review_status}</small><p>{item.locator || item.source_notes || "Open the OMNIVEX source record and its linked entities."}</p></span><ArrowUpRight size={17} /></Link>)}</div> : <EmptyState title="No source records match" body="Sources are added as independent records and linked to evidence, not treated as evidence by themselves." />
           ) : activeTab === "relations" ? (
@@ -959,9 +991,31 @@ export function ResearchPage() {
                 ))}</div>
               </>
             ) : <EmptyState title="No relationship suggestions yet" body="Run the consistency scan from a source record after collecting at least two evidence records for the same exact version." />
+          ) : activeTab === "queue" ? (
+            (evidenceLoading || capabilitiesLoading || relationsLoading || sourcesLoading) ? <LoadingLine>Loading the moderation queue…</LoadingLine> : !isModerator ? (
+              <EmptyState title="Moderator access required" body="Submissions and AI-generated review leads are visible here. Only accounts with an authorized OMNIVEX moderator/admin role can approve, dispute or reject records."/>
+            ) : queueItems.length ? (
+              <>
+                <div className="platform-queue-note"><ShieldCheck size={17}/><span>Review decisions affect what the Battle Engine can use. Source approval, evidence verification, capability verification and contradiction adjudication are separate decisions.</span></div>
+                <div className="platform-list">{queueItems.map(item => (
+                  <article className="platform-list-row platform-list-row--static" key={item.kind + ":" + item.id}>
+                    <span>
+                      <small>{item.kind.toUpperCase()} · {String(item.status).replace(/_/g," ")} · {item.date ? new Date(item.date).toLocaleDateString() : "DATE NOT RECORDED"}</small>
+                      <strong>{item.title}</strong>
+                      <p>{item.detail || "No additional context supplied."}</p>
+                    </span>
+                    <div className="research-review-actions">
+                      <button type="button" className="atlas-button atlas-button--dark" disabled={moderatingKey === item.kind + ":" + item.id} onClick={() => reviewRecord(item,"verified")}>Verify</button>
+                      <button type="button" className="atlas-button atlas-button--outline" disabled={moderatingKey === item.kind + ":" + item.id} onClick={() => reviewRecord(item,"disputed")}>Dispute</button>
+                      <button type="button" className="atlas-button atlas-button--outline" disabled={moderatingKey === item.kind + ":" + item.id} onClick={() => reviewRecord(item,"rejected")}>Reject</button>
+                    </div>
+                  </article>
+                ))}</div>
+              </>
+            ) : <EmptyState title="Review queue is clear" body="There are no pending source, evidence, capability or relationship records matching this filter."/>
           ) : evidenceLoading ? <LoadingLine>Loading evidence records…</LoadingLine> : (
             <>
-              {activeTab === "queue" && <div className="platform-queue-note"><ShieldCheck size={17} /><span>Review queue shows submitted and disputed records. Only authorized moderators can change verification status.</span></div>}
+
               {filteredEvidence.filter(item => activeTab !== "queue" || ["submitted", "needs_review", "disputed"].includes(item.review_status)).length ? (
                 <div className="platform-list">{filteredEvidence.filter(item => activeTab !== "queue" || ["submitted", "needs_review", "disputed"].includes(item.review_status)).map(item => <Link className="platform-list-row" key={item.id} to={"/research/evidence/" + item.id}><span><strong>{item.summary}</strong><small>{item.evidence_type} · {item.canon_status} · {item.review_status} · {item.reliability_grade || "UNRATED"}</small><p>{item.context || "Context not submitted."}</p></span><ArrowUpRight size={17} /></Link>)}</div>
               ) : <EmptyState title="No evidence records found" body="Evidence appears when a contribution includes an exact version and source context. Nothing is fabricated to fill an empty research workspace." />}
