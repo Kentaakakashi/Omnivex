@@ -651,27 +651,174 @@ export function MatchupDetailPage() {
 
 export function ResearchPage() {
   const { rows: evidence, loading: evidenceLoading, error: evidenceError } = useRows("evidence_records", "created_at", 240);
-  const { rows: sources, loading: sourcesLoading, error: sourcesError } = useRows("source_records", "created_at", 200);
-  const activeTab = useActiveTab("evidence");
+  const { rows: sources, loading: sourcesLoading, error: sourcesError, refresh: refreshSources } = useRows("source_records", "created_at", 200);
+  const activeTab = useActiveTab("discover");
+  const { user } = useAuth();
+  const { showToast } = useToast();
+  const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [review, setReview] = useState("all");
+  const [discoveryQuery, setDiscoveryQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [discovery, setDiscovery] = useState(null);
+  const [researchError, setResearchError] = useState("");
+  const [savingKey, setSavingKey] = useState("");
+  const [importingKey, setImportingKey] = useState("");
+  const [savedKeys, setSavedKeys] = useState({});
+  const [importedKeys, setImportedKeys] = useState({});
   const filteredEvidence = evidence.filter(item => [item.summary, item.context, item.evidence_type, item.review_status].join(" ").toLowerCase().includes(query.toLowerCase()) && (review === "all" || item.review_status === review));
   const filteredSources = sources.filter(item => [item.title, item.publisher_or_host, item.locator, item.source_type].join(" ").toLowerCase().includes(query.toLowerCase()));
-  const tabs = [{ value: "evidence", label: "Evidence" }, { value: "sources", label: "Source library" }, { value: "queue", label: "Review queue" }];
+  const tabs = [{ value: "discover", label: "Discover online" }, { value: "evidence", label: "Evidence" }, { value: "sources", label: "Source library" }, { value: "queue", label: "Review queue" }];
+
+  const searchOnline = async event => {
+    event?.preventDefault();
+    const cleanQuery = discoveryQuery.trim();
+    if (cleanQuery.length < 2) return;
+    if (!supabase) { setResearchError("Connect the Supabase project before using online discovery."); return; }
+    setSearching(true);
+    setResearchError("");
+    setDiscovery(null);
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke("omnivex-research", {
+        body: { action: "search", query: cleanQuery }
+      });
+      if (invokeError) throw new Error(invokeError.message || "The research service could not be reached.");
+      if (data?.error) throw new Error(data.error);
+      setDiscovery(data);
+    } catch (error) {
+      setResearchError(error?.message || "Online discovery failed.");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const saveDiscoveredSource = async source => {
+    if (!user) { navigate("/auth/sign-in"); return; }
+    setSavingKey(source.key);
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke("omnivex-research", {
+        body: { action: "save_source", source }
+      });
+      if (invokeError) throw new Error(invokeError.message || "Could not save source.");
+      if (data?.error) throw new Error(data.error);
+      setSavedKeys(old => ({ ...old, [source.key]: true }));
+      refreshSources();
+      showToast(data.alreadySaved ? "Source is already in the library." : "Source saved as submitted.");
+    } catch (error) {
+      showToast({ title: "Source could not be saved", description: error?.message || "Try again." });
+    } finally {
+      setSavingKey("");
+    }
+  };
+
+  const importCandidate = async candidate => {
+    if (!user) { navigate("/auth/sign-in"); return; }
+    setImportingKey(candidate.key);
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke("omnivex-research", {
+        body: { action: "import_entity", provider: candidate.provider, externalId: candidate.providerId }
+      });
+      if (invokeError) throw new Error(invokeError.message || "Could not import entity.");
+      if (data?.error) throw new Error(data.error);
+      setImportedKeys(old => ({ ...old, [candidate.key]: data.entity?.slug || true }));
+      refreshSources();
+      showToast(data.alreadyIndexed ? "Entity already exists in the index." : "Provisional entity added to OMNIVEX.");
+    } catch (error) {
+      showToast({ title: "Entity import failed", description: error?.message || "Try again." });
+    } finally {
+      setImportingKey("");
+    }
+  };
+
   return (
     <div className="atlas-feature-page platform-page">
-      <PageIntro eyebrow="RESEARCH / EVIDENCE INTELLIGENCE" title={<>Every claim needs <em>context.</em></>} description="Inspect evidence, follow source records and distinguish submitted claims from reviewed material. Popularity and AI-generated interpretation never substitute for verification." />
+      <PageIntro eyebrow="RESEARCH / UNIVERSAL DISCOVERY" title={<>Find the source. <em>Build the record.</em></>} description="Search public reference databases, scholarly metadata and specialist catalogues. Discovery is automatic; identity, evidence and interpretation stay explicitly unverified until reviewed." />
       <TabBar tabs={tabs} active={activeTab} pathname="/research" />
-      <div className="platform-filter-row"><label className="platform-search-field"><Search size={16} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={activeTab === "sources" ? "Search source title, publisher or locator…" : "Search evidence claims and context…"} /></label>{activeTab !== "sources" && <label className="platform-sort"><Filter size={15} /><select value={review} onChange={event => setReview(event.target.value)}><option value="all">All review states</option><option value="submitted">Submitted</option><option value="needs_review">Needs review</option><option value="verified">Verified</option><option value="disputed">Disputed</option><option value="rejected">Rejected</option><option value="outdated">Outdated</option></select></label>}</div>
-      <DataNotice error={evidenceError || sourcesError} />
-      {activeTab === "sources" ? (
-        sourcesLoading ? <LoadingLine>Loading source library…</LoadingLine> : filteredSources.length ? <div className="platform-list">{filteredSources.map(item => <article className="platform-list-row platform-list-row--static" key={item.id}><span><strong>{item.title}</strong><small>{item.publisher_or_host || item.source_type} · {item.reliability_grade || "NOT GRADED"} · {item.review_status}</small><p>{item.locator || "No source locator added."}</p></span>{item.url && <a href={item.url} target="_blank" rel="noreferrer" aria-label={"Open " + item.title}><ArrowUpRight size={17} /></a>}</article>)}</div> : <EmptyState title="No source records match" body="Sources are added as independent records and linked to evidence, not treated as evidence by themselves." />
-      ) : evidenceLoading ? <LoadingLine>Loading evidence records…</LoadingLine> : (
+      {activeTab === "discover" ? (
         <>
-          {activeTab === "queue" && <div className="platform-queue-note"><ShieldCheck size={17} /><span>Review queue shows submitted and disputed records. Only authorized moderators can change verification status.</span></div>}
-          {filteredEvidence.filter(item => activeTab !== "queue" || ["submitted", "needs_review", "disputed"].includes(item.review_status)).length ? (
-            <div className="platform-list">{filteredEvidence.filter(item => activeTab !== "queue" || ["submitted", "needs_review", "disputed"].includes(item.review_status)).map(item => <Link className="platform-list-row" key={item.id} to={"/research/evidence/" + item.id}><span><strong>{item.summary}</strong><small>{item.evidence_type} · {item.canon_status} · {item.review_status} · {item.reliability_grade || "UNRATED"}</small><p>{item.context || "Context not submitted."}</p></span><ArrowUpRight size={17} /></Link>)}</div>
-          ) : <EmptyState title="No evidence records found" body="Evidence appears when a contribution includes an exact version and source context. Nothing is fabricated to fill an empty research workspace." />}
+          <form className="platform-filter-row" onSubmit={searchOnline}>
+            <label className="platform-search-field">
+              <Search size={17} />
+              <input value={discoveryQuery} onChange={event => setDiscoveryQuery(event.target.value)} placeholder="Search a character, animal, historical subject, work or topic…" maxLength={120} />
+              {discoveryQuery && <button type="button" aria-label="Clear search" onClick={() => { setDiscoveryQuery(""); setDiscovery(null); }}><X size={15} /></button>}
+            </label>
+            <button className="atlas-button atlas-button--dark" type="submit" disabled={searching || discoveryQuery.trim().length < 2}>
+              {searching ? "Searching…" : "Search online"} <ArrowRight size={15} />
+            </button>
+          </form>
+          {researchError && <p className="platform-notice platform-notice--error">{researchError}</p>}
+          {searching && <LoadingLine>Searching Wikidata, Wikipedia, Crossref, Open Library and anime character records…</LoadingLine>}
+          {discovery && (
+            <>
+              <div className="platform-queue-note"><Globe2 size={17} /><span>Search results are discovery leads, not verified facts. Imports create provisional identities; saved links enter the submitted source library.</span></div>
+              <section className="platform-section">
+                <div className="platform-section-heading"><div><span className="section-kicker">PROVIDER COVERAGE</span><h2>Where OMNIVEX searched</h2></div><span>{discovery.sources?.length || 0} SOURCES</span></div>
+                <div className="platform-meta-row">
+                  {(discovery.providers || []).map(provider => <MetaPill key={provider.name}>{provider.name} · {provider.status === "available" ? provider.resultCount + " found" : provider.status.replaceAll("_", " ")}</MetaPill>)}
+                </div>
+              </section>
+              <section className="platform-section">
+                <div className="platform-section-heading"><div><span className="section-kicker">ENTITY RESOLUTION</span><h2>Possible identities</h2></div><span>{discovery.candidates?.length || 0} CANDIDATES</span></div>
+                {discovery.candidates?.length ? (
+                  <div className="platform-list">
+                    {discovery.candidates.map(candidate => (
+                      <article className="platform-list-row platform-list-row--static" key={candidate.key}>
+                        <span>
+                          <small>{candidate.provider} · {candidate.providerId}</small>
+                          <strong>{candidate.name}</strong>
+                          <p>{candidate.description || "No description supplied by the reference provider."}</p>
+                          <a href={candidate.url} target="_blank" rel="noreferrer">Open reference <ArrowUpRight size={13} /></a>
+                        </span>
+                        <button className="atlas-button atlas-button--outline" type="button" disabled={Boolean(importedKeys[candidate.key]) || importingKey === candidate.key} onClick={() => importCandidate(candidate)}>
+                          {importedKeys[candidate.key] ? "Added to index" : importingKey === candidate.key ? "Adding…" : "Import identity"}
+                        </button>
+                      </article>
+                    ))}
+                  </div>
+                ) : <EmptyState title="No identity candidates found" body="Try a more specific name or a different spelling. Search still checks the source catalogues below." />}
+              </section>
+              <section className="platform-section">
+                <div className="platform-section-heading"><div><span className="section-kicker">SOURCE DISCOVERY</span><h2>References to inspect</h2></div><span>{discovery.sources?.length || 0} RESULTS</span></div>
+                {discovery.sources?.length ? (
+                  <div className="platform-list">
+                    {discovery.sources.map(source => (
+                      <article className="platform-list-row platform-list-row--static" key={source.key}>
+                        <span>
+                          <small>{source.provider} · {source.sourceType.replaceAll("_", " ")}{source.publishedYear ? " · " + source.publishedYear : ""}</small>
+                          <strong>{source.title}</strong>
+                          <p>{source.snippet || "The provider returned a bibliographic reference without an abstract."}</p>
+                          <a href={source.url} target="_blank" rel="noreferrer">Inspect original source <ArrowUpRight size={13} /></a>
+                        </span>
+                        <button className="atlas-button atlas-button--outline" type="button" disabled={Boolean(savedKeys[source.key]) || savingKey === source.key} onClick={() => saveDiscoveredSource(source)}>
+                          {savedKeys[source.key] ? "Saved" : savingKey === source.key ? "Saving…" : "Save source"}
+                        </button>
+                      </article>
+                    ))}
+                  </div>
+                ) : <EmptyState title="No source records returned" body="The online providers may be temporarily unavailable or the query may be too narrow." />}
+              </section>
+              <p className="atlas-caption">{discovery.notice}</p>
+            </>
+          )}
+          {!discovery && !searching && !researchError && <EmptyState title="Start with any subject" body="Search across reference databases, Wikipedia, scholarly metadata, book catalogues and anime character records. Nothing is added to the index until you choose to import it." />}
+        </>
+      ) : (
+        <>
+          <div className="platform-filter-row">
+            <label className="platform-search-field"><Search size={16} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={activeTab === "sources" ? "Search source title, publisher or locator…" : "Search evidence claims and context…"} /></label>
+            {activeTab !== "sources" && <label className="platform-sort"><Filter size={15} /><select value={review} onChange={event => setReview(event.target.value)}><option value="all">All review states</option><option value="submitted">Submitted</option><option value="needs_review">Needs review</option><option value="verified">Verified</option><option value="disputed">Disputed</option><option value="rejected">Rejected</option><option value="outdated">Outdated</option></select></label>}
+          </div>
+          <DataNotice error={evidenceError || sourcesError} />
+          {activeTab === "sources" ? (
+            sourcesLoading ? <LoadingLine>Loading source library…</LoadingLine> : filteredSources.length ? <div className="platform-list">{filteredSources.map(item => <article className="platform-list-row platform-list-row--static" key={item.id}><span><strong>{item.title}</strong><small>{item.publisher_or_host || item.source_type} · {item.reliability_grade || "NOT GRADED"} · {item.review_status}</small><p>{item.locator || "No source locator added."}</p></span>{item.url && <a href={item.url} target="_blank" rel="noreferrer" aria-label={"Open " + item.title}><ArrowUpRight size={17} /></a>}</article>)}</div> : <EmptyState title="No source records match" body="Sources are added as independent records and linked to evidence, not treated as evidence by themselves." />
+          ) : evidenceLoading ? <LoadingLine>Loading evidence records…</LoadingLine> : (
+            <>
+              {activeTab === "queue" && <div className="platform-queue-note"><ShieldCheck size={17} /><span>Review queue shows submitted and disputed records. Only authorized moderators can change verification status.</span></div>}
+              {filteredEvidence.filter(item => activeTab !== "queue" || ["submitted", "needs_review", "disputed"].includes(item.review_status)).length ? (
+                <div className="platform-list">{filteredEvidence.filter(item => activeTab !== "queue" || ["submitted", "needs_review", "disputed"].includes(item.review_status)).map(item => <Link className="platform-list-row" key={item.id} to={"/research/evidence/" + item.id}><span><strong>{item.summary}</strong><small>{item.evidence_type} · {item.canon_status} · {item.review_status} · {item.reliability_grade || "UNRATED"}</small><p>{item.context || "Context not submitted."}</p></span><ArrowUpRight size={17} /></Link>)}</div>
+              ) : <EmptyState title="No evidence records found" body="Evidence appears when a contribution includes an exact version and source context. Nothing is fabricated to fill an empty research workspace." />}
+            </>
+          )}
         </>
       )}
     </div>
