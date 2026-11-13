@@ -326,6 +326,12 @@ async function importWikidata(client: any, userId: string, itemId: string) {
     publisher: item.sitelinks?.enwiki ? "Wikipedia" : "Wikidata",
     author: null
   });
+  const { error: linkError } = await client.from("entity_source_links").upsert({
+    entity_id: entity.id, source_record_id: saved.source.id,
+    relationship_type: "reference_database", note: "Wikidata identity reference; not a canon or feat verification.",
+    created_by: userId
+  }, { onConflict: "entity_id,source_record_id,relationship_type" });
+  if (linkError) throw new Error("Could not connect the identity reference: " + linkError.message);
   return {
     entity,
     version,
@@ -380,6 +386,12 @@ async function importJikan(client: any, userId: string, malId: string) {
     sourceType: "database_record",
     publisher: "MyAnimeList via Jikan API"
   });
+  const { error: linkError } = await client.from("entity_source_links").upsert({
+    entity_id: entity.id, source_record_id: saved.source.id,
+    relationship_type: "community_database_reference", note: "Community-maintained character metadata; not primary canon evidence.",
+    created_by: userId
+  }, { onConflict: "entity_id,source_record_id,relationship_type" });
+  if (linkError) throw new Error("Could not connect the identity reference: " + linkError.message);
   return {
     entity, version, source: saved.source, alreadyIndexed: Boolean(existing),
     description,
