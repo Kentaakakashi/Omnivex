@@ -199,7 +199,9 @@ export function ExplorePage() {
   const tabs = [
     { value: "all", label: "Everything" },
     { value: "characters", label: "Characters" },
-    { value: "universes", label: "Universes" },
+    { value: "universes", label: "All universes" },
+    { value: "comics", label: "Comics" },
+    { value: "anime", label: "Anime & manga" },
     { value: "mythology", label: "Mythology" },
     { value: "history", label: "History" },
     { value: "creatures", label: "Creatures" },
@@ -224,13 +226,20 @@ export function ExplorePage() {
   }, [entities, aliasesByEntity, search, activeTab, sort]);
   const filteredUniverses = useMemo(() => {
     const q = search.trim().toLowerCase();
-    let result = universes.filter(item => !q || [item.name, item.description, item.category].join(" ").toLowerCase().includes(q));
+    let result = universes.filter(item => {
+      const category = String(item.category || "").toLowerCase();
+      const matchesCategory = activeTab === "comics" ? category === "comics"
+        : activeTab === "anime" ? ["anime_manga", "games_anime"].includes(category)
+        : true;
+      return matchesCategory && (!q || [item.name, item.description, item.category].join(" ").toLowerCase().includes(q));
+    });
     if (sort === "alphabetical") result = [...result].sort((a, b) => a.name.localeCompare(b.name));
     else result = [...result].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
     return result;
-  }, [universes, search, sort]);
-  const showEntities = activeTab !== "universes";
-  const showUniverses = activeTab === "all" || activeTab === "universes";
+  }, [universes, search, sort, activeTab]);
+  const universeOnlyTabs = ["universes", "comics", "anime"];
+  const showEntities = !universeOnlyTabs.includes(activeTab);
+  const showUniverses = ["all", ...universeOnlyTabs].includes(activeTab);
   const loading = (showEntities && entitiesLoading) || (showUniverses && universesLoading);
   const submitSearch = event => {
     event.preventDefault();
