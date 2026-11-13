@@ -754,3 +754,13 @@ create index if not exists feat_claims_version_idx
   on public.feat_claims(entity_version_id, created_at desc);
 create index if not exists source_records_url_idx
   on public.source_records(url);
+
+
+-- Moderator review metadata for reproducible matchup reports.
+alter table public.matchup_reports
+  add column if not exists reviewed_by uuid references auth.users(id) on delete set null,
+  add column if not exists reviewed_at timestamptz,
+  add column if not exists review_notes text;
+
+create index if not exists matchup_reports_verification_idx
+  on public.matchup_reports(verification_status, created_at desc);
