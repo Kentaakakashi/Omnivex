@@ -764,10 +764,10 @@ export function ResearchPage() {
   const { rows: capabilities, loading: capabilitiesLoading, error: capabilitiesError, refresh: refreshCapabilities } = useRows("capabilities", "created_at", 240);
   const [relationEvidence, setRelationEvidence] = useState({});
   const [moderatingKey, setModeratingKey] = useState("");
-  const isModerator = ["moderator", "admin"].includes(user?.app_metadata?.omnivex_role);
   const activeTab = useActiveTab("discover");
   const { user } = useAuth();
   const { showToast } = useToast();
+  const isModerator = ["moderator", "admin"].includes(user?.app_metadata?.omnivex_role);
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [review, setReview] = useState("all");
