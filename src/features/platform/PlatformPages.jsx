@@ -507,21 +507,19 @@ export function MatchupCreatePage() {
     if (!first || !second || sideA === sideB) { showToast("Choose two different version records."); return; }
     setSaving(true);
     const title = first.entity.name + " vs " + second.entity.name;
-    const slug = slugify(title) + "-" + Date.now().toString(36);
     const configuration = {
       ruleset, participants: [{ entity_version_id: sideA, side: "side_a" }, { entity_version_id: sideB, side: "side_b" }],
       environment, starting_distance: distance, victory_condition: victory, preparation, prior_knowledge: knowledge,
       notes: notes.trim(), verdict: null
     };
-    const { data: matchup, error: matchupError } = await supabase.from("matchups").insert({
-      slug, title, description: notes.trim(), configuration, status: "published", created_by: user.id
-    }).select("*").single();
+    const { data: matchupId, error: matchupError } = await supabase.rpc("create_matchup", {
+      matchup_title: title,
+      matchup_configuration: configuration,
+      participant_version_ids: [sideA, sideB]
+    });
     if (matchupError) { showToast({ title: "Matchup could not be saved", description: matchupError.message }); setSaving(false); return; }
-    const { error: participantError } = await supabase.from("matchup_participants").insert([
-      { matchup_id: matchup.id, entity_version_id: sideA, side: "side_a", participant_order: 1 },
-      { matchup_id: matchup.id, entity_version_id: sideB, side: "side_b", participant_order: 1 }
-    ]);
-    if (participantError) { showToast({ title: "Participants could not be attached", description: participantError.message }); setSaving(false); return; }
+    const { data: matchup, error: lookupError } = await supabase.from("matchups").select("id,slug").eq("id", matchupId).single();
+    if (lookupError || !matchup) { showToast({ title: "Matchup was created but could not be opened", description: lookupError?.message || "The saved record could not be found." }); setSaving(false); return; }
     showToast("Matchup configuration published. No verdict has been generated.");
     navigate("/matchups/" + matchup.slug);
     setSaving(false);
