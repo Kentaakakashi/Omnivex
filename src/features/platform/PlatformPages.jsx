@@ -1,0 +1,884 @@
+import React, { useEffect, useMemo, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
+import {
+  ArrowLeft, ArrowRight, ArrowUpRight, Bookmark, CalendarDays, Check,
+  Compass, FileSearch, Filter, Globe2, LogIn, MessageSquare, Plus,
+  Search, ShieldCheck, Swords, Users, X
+} from "lucide-react";
+import { supabase } from "../../lib/supabase.js";
+import { useAuth } from "../../app/providers/AuthProvider.jsx";
+import { useToast } from "../../app/providers/ToastProvider.jsx";
+
+const slugify = value => String(value || "").toLowerCase().trim()
+  .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+function useRows(table, orderColumn = "created_at", limit = 100) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    let active = true;
+    if (!supabase) {
+      setRows([]);
+      setLoading(false);
+      setError("");
+      return () => { active = false; };
+    }
+    setLoading(true);
+    setError("");
+    let query = supabase.from(table).select("*");
+    if (orderColumn) query = query.order(orderColumn, { ascending: false });
+    if (limit) query = query.limit(limit);
+    query.then(({ data, error: queryError }) => {
+      if (!active) return;
+      if (queryError) setError(queryError.message);
+      else setRows(data || []);
+      setLoading(false);
+    }).catch(queryError => {
+      if (!active) return;
+      setError(queryError?.message || "Unable to load records.");
+      setLoading(false);
+    });
+    return () => { active = false; };
+  }, [table, orderColumn, limit, revision]);
+  return { rows, loading, error, refresh: () => setRevision(value => value + 1) };
+}
+
+function PageIntro({ eyebrow, title, description, action }) {
+  return (
+    <header className="atlas-page-intro platform-page-intro">
+      <div>
+        <span className="section-kicker">{eyebrow}</span>
+        <h1>{title}</h1>
+        <p>{description}</p>
+      </div>
+      {action}
+    </header>
+  );
+}
+
+function EmptyState({ title, body, action }) {
+  return (
+    <div className="platform-empty">
+      <span className="platform-empty__symbol"><Compass size={19} /></span>
+      <strong>{title}</strong>
+      <p>{body}</p>
+      {action}
+    </div>
+  );
+}
+
+function DataNotice({ error }) {
+  if (!supabase) return <p className="platform-notice">Connect the Supabase publishable key to load live OMNIVEX records.</p>;
+  if (error) return <p className="platform-notice platform-notice--error">Could not load this data: {error}</p>;
+  return null;
+}
+
+function LoadingLine({ children = "Loading records…" }) {
+  return <p className="platform-loading" role="status">{children}</p>;
+}
+
+function RecordCard({ record, type = "entity", to }) {
+  const title = record.name || record.title || record.summary || "Untitled record";
+  const description = record.short_description || record.description || record.body || "";
+  const imageAllowed = Boolean(
+    record.artwork_url &&
+    record.artwork_source_url &&
+    ["public_domain", "cc0", "cc_by", "cc_by_sa", "licensed", "publisher_authorized", "user_owned"]
+      .includes(record.artwork_use_basis)
+  );
+  return (
+    <Link className="platform-record-card" to={to}>
+      <div className="platform-record-card__art">
+        {imageAllowed ? (
+          <img src={record.artwork_url} alt={title} loading="lazy" referrerPolicy="no-referrer" />
+        ) : (
+          <div className="platform-art-placeholder" aria-label={"Artwork not attached for " + title}>
+            <span>{title.slice(0, 2).toUpperCase()}</span>
+            <small>VERSION-MATCHED ARTWORK PENDING</small>
+          </div>
+        )}
+        <span className="platform-record-card__type">{type}</span>
+      </div>
+      <div className="platform-record-card__body">
+        <div>
+          <strong>{title}</strong>
+          {description && <p>{description}</p>}
+        </div>
+        <span className="platform-record-card__meta">{record.entity_type || record.category || record.status || "INDEXED"} <ArrowUpRight size={15} /></span>
+      </div>
+    </Link>
+  );
+}
+
+function TabBar({ tabs, active, pathname }) {
+  const location = useLocation();
+  const current = new URLSearchParams(location.search);
+  return (
+    <nav className="platform-tabs" aria-label="Page sections">
+      {tabs.map(tab => {
+        const params = new URLSearchParams(current);
+        params.set("tab", tab.value);
+        return (
+          <Link
+            key={tab.value}
+            to={{ pathname: pathname || location.pathname, search: "?" + params.toString() }}
+            className={active === tab.value ? "is-active" : ""}
+          >
+            {tab.label}
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+function useActiveTab(fallback) {
+  const location = useLocation();
+  return new URLSearchParams(location.search).get("tab") || fallback;
+}
+
+function MetaPill({ children }) {
+  return <span className="platform-meta-pill">{children}</span>;
+}
+
+export function ExplorePage() {
+  const { rows: entities, loading: entitiesLoading, error: entityError } = useRows("entities", "created_at", 200);
+  const { rows: universes, loading: universesLoading, error: universeError } = useRows("universes", "created_at", 120);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const activeTab = useActiveTab("all");
+  const [search, setSearch] = useState(new URLSearchParams(location.search).get("q") || "");
+  const [sort, setSort] = useState("recent");
+  const tabs = [
+    { value: "all", label: "Everything" },
+    { value: "characters", label: "Characters" },
+    { value: "universes", label: "Universes" },
+    { value: "mythology", label: "Mythology" },
+    { value: "history", label: "History" },
+    { value: "creatures", label: "Creatures" },
+    { value: "teams", label: "Teams & groups" }
+  ];
+  const filteredEntities = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let result = entities.filter(item => {
+      const haystack = [item.name, item.short_description, item.entity_type].join(" ").toLowerCase();
+      if (q && !haystack.includes(q)) return false;
+      if (activeTab === "characters") return (item.entity_type || "").toLowerCase().includes("character");
+      if (activeTab === "mythology") return (item.entity_type || "").toLowerCase().includes("myth");
+      if (activeTab === "history") return (item.entity_type || "").toLowerCase().includes("histor");
+      if (activeTab === "creatures") return ["creature", "animal", "monster", "being"].some(term => (item.entity_type || "").toLowerCase().includes(term));
+      if (activeTab === "teams") return ["team", "group", "organization", "organisation"].some(term => (item.entity_type || "").toLowerCase().includes(term));
+      if (activeTab === "universes") return false;
+      return true;
+    });
+    if (sort === "alphabetical") result = [...result].sort((a, b) => a.name.localeCompare(b.name));
+    else result = [...result].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    return result;
+  }, [entities, search, activeTab, sort]);
+  const filteredUniverses = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    let result = universes.filter(item => !q || [item.name, item.description, item.category].join(" ").toLowerCase().includes(q));
+    if (sort === "alphabetical") result = [...result].sort((a, b) => a.name.localeCompare(b.name));
+    else result = [...result].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    return result;
+  }, [universes, search, sort]);
+  const showEntities = activeTab !== "universes";
+  const showUniverses = activeTab === "all" || activeTab === "universes";
+  const loading = (showEntities && entitiesLoading) || (showUniverses && universesLoading);
+  const submitSearch = event => {
+    event.preventDefault();
+    const params = new URLSearchParams(location.search);
+    if (search.trim()) params.set("q", search.trim());
+    else params.delete("q");
+    navigate({ pathname: "/explore", search: params.toString() ? "?" + params.toString() : "" });
+  };
+
+  return (
+    <div className="atlas-feature-page platform-page">
+      <PageIntro
+        eyebrow="EXPLORE / THE UNIVERSAL INDEX"
+        title={<>Follow the <em>thread.</em></>}
+        description="Search identities, worlds, creatures, teams and historical records in one place. Alternate versions and continuities stay distinct inside each dossier."
+        action={<Link className="atlas-button atlas-button--dark" to="/matchups/new"><Swords size={15} /> Create matchup</Link>}
+      />
+      <form className="platform-search-row" onSubmit={submitSearch}>
+        <label className="platform-search-field">
+          <Search size={18} />
+          <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search a character, universe, creature or alias…" />
+          {search && <button type="button" aria-label="Clear search" onClick={() => setSearch("")}><X size={16} /></button>}
+        </label>
+        <label className="platform-sort">
+          <Filter size={15} />
+          <select value={sort} onChange={event => setSort(event.target.value)}>
+            <option value="recent">Recently added</option>
+            <option value="alphabetical">A–Z</option>
+          </select>
+        </label>
+        <button className="atlas-button atlas-button--dark" type="submit">Search <ArrowRight size={15} /></button>
+      </form>
+      <TabBar tabs={tabs} active={activeTab} pathname="/explore" />
+      <DataNotice error={entityError || universeError} />
+      {loading ? <LoadingLine>Opening the universal index…</LoadingLine> : (
+        <>
+          {showUniverses && (
+            <section className="platform-section">
+              <div className="platform-section-heading">
+                <div><span className="section-kicker">WORLDS & CONTINUITIES</span><h2>Universes</h2></div>
+                <span>{filteredUniverses.length} INDEXED</span>
+              </div>
+              {filteredUniverses.length ? (
+                <div className="platform-card-grid platform-card-grid--universes">
+                  {filteredUniverses.map(item => <RecordCard key={item.id} record={item} type="UNIVERSE" to={"/universe/" + item.slug} />)}
+                </div>
+              ) : <EmptyState title="No universe records match" body="Universes appear here after a source-linked universe record is added." />}
+            </section>
+          )}
+          {showEntities && (
+            <section className="platform-section">
+              <div className="platform-section-heading">
+                <div><span className="section-kicker">IDENTITIES & ENTITIES</span><h2>{activeTab === "all" ? "Entity index" : tabs.find(item => item.value === activeTab)?.label || "Entities"}</h2></div>
+                <span>{filteredEntities.length} RECORDS</span>
+              </div>
+              {filteredEntities.length ? (
+                <div className="platform-card-grid">
+                  {filteredEntities.map(item => <RecordCard key={item.id} record={item} type={(item.entity_type || "ENTITY").toUpperCase()} to={"/entity/" + item.slug} />)}
+                </div>
+              ) : <EmptyState title={entities.length ? "No records match those filters" : "The index is waiting for its first records"} body={entities.length ? "Try another search term or select Everything." : "The catalogue will populate when real entity and version records are added. The preview does not invent character profiles."} />}
+            </section>
+          )}
+        </>
+      )}
+      <p className="atlas-caption">Artwork is shown only when a record carries a source URL and an approved usage basis. A missing image never gets replaced with a cosplay photograph.</p>
+    </div>
+  );
+}
+
+export function EntityDossierPage() {
+  const { entitySlug, versionSlug } = useParams();
+  const { user } = useAuth();
+  const { showToast } = useToast();
+  const navigate = useNavigate();
+  const [entity, setEntity] = useState(null);
+  const [versions, setVersions] = useState([]);
+  const [activeVersion, setActiveVersion] = useState(null);
+  const [capabilities, setCapabilities] = useState([]);
+  const [evidence, setEvidence] = useState([]);
+  const [sources, setSources] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    if (!supabase) { setLoading(false); return () => { active = false; }; }
+    setLoading(true);
+    (async () => {
+      const { data, error: queryError } = await supabase.from("entities").select("*").eq("slug", entitySlug).maybeSingle();
+      if (!active) return;
+      if (queryError) { setError(queryError.message); setLoading(false); return; }
+      setEntity(data);
+      if (!data) { setLoading(false); return; }
+      const { data: versionRows, error: versionError } = await supabase.from("entity_versions").select("*").eq("entity_id", data.id).order("created_at", { ascending: true });
+      if (!active) return;
+      if (versionError) setError(versionError.message);
+      const selected = (versionRows || []).find(item => item.slug === versionSlug) || (versionRows || [])[0] || null;
+      setVersions(versionRows || []);
+      setActiveVersion(selected);
+      setLoading(false);
+    })().catch(queryError => { if (active) { setError(queryError.message || "Unable to load dossier."); setLoading(false); } });
+    return () => { active = false; };
+  }, [entitySlug, versionSlug]);
+  useEffect(() => {
+    let active = true;
+    if (!supabase || !activeVersion) { setCapabilities([]); setEvidence([]); setSources([]); return () => { active = false; }; }
+    (async () => {
+      const [capResult, evidenceResult] = await Promise.all([
+        supabase.from("capabilities").select("*").eq("entity_version_id", activeVersion.id).order("capability_name"),
+        supabase.from("evidence_records").select("*").eq("entity_version_id", activeVersion.id).order("created_at", { ascending: false }).limit(40)
+      ]);
+      if (!active) return;
+      setCapabilities(capResult.data || []);
+      setEvidence(evidenceResult.data || []);
+      if (capResult.error || evidenceResult.error) setError(capResult.error?.message || evidenceResult.error?.message || "");
+      const ids = [...new Set((evidenceResult.data || []).map(item => item.source_record_id).filter(Boolean))];
+      if (ids.length) {
+        const { data } = await supabase.from("source_records").select("*").in("id", ids);
+        if (active) setSources(data || []);
+      } else setSources([]);
+    })();
+    return () => { active = false; };
+  }, [activeVersion]);
+  const save = async () => {
+    if (!user) { navigate("/auth/sign-in"); return; }
+    const { error: saveError } = await supabase.from("saved_items").insert({ user_id: user.id, target_type: "entity", target_id: entity.id });
+    if (saveError?.code === "23505") showToast("Already in your library.");
+    else if (saveError) showToast({ title: "Could not save entity", description: saveError.message });
+    else showToast("Saved to your library.");
+  };
+  const chosenArtwork = activeVersion || entity || {};
+  const artworkAllowed = Boolean(chosenArtwork.artwork_url && chosenArtwork.artwork_source_url && chosenArtwork.artwork_use_basis);
+  if (loading) return <div className="atlas-feature-page"><LoadingLine>Opening entity dossier…</LoadingLine></div>;
+  if (!entity) return <div className="atlas-feature-page"><EmptyState title="Entity record not found" body={supabase ? "This slug does not resolve to a public entity record." : "Add the Supabase publishable key to load the catalogue."} action={<Link className="atlas-button atlas-button--dark" to="/explore">Back to Explore</Link>} /></div>;
+
+  return (
+    <div className="atlas-feature-page platform-page">
+      <div className="platform-detail-heading">
+        <div>
+          <span className="section-kicker">ENTITY DOSSIER / {String(entity.entity_type || "RECORD").toUpperCase()}</span>
+          <h1>{entity.name}</h1>
+          <p>{entity.short_description || "No description has been submitted for this identity yet."}</p>
+          <div className="platform-meta-row"><MetaPill>{entity.status}</MetaPill><MetaPill>{versions.length} VERSION RECORDS</MetaPill><MetaPill>ID {entity.id.slice(0, 8).toUpperCase()}</MetaPill></div>
+        </div>
+        <div className="platform-detail-art">
+          {artworkAllowed ? <img src={chosenArtwork.artwork_url} alt={entity.name + " official character artwork"} /> : <div className="platform-art-placeholder platform-art-placeholder--large"><span>{entity.name.slice(0, 2).toUpperCase()}</span><small>VERSION-MATCHED ARTWORK PENDING</small></div>}
+        </div>
+      </div>
+      <DataNotice error={error} />
+      <div className="platform-detail-actions">
+        <button className="atlas-button atlas-button--dark" type="button" onClick={save}><Bookmark size={15} /> Save to library</button>
+        <button className="atlas-button atlas-button--outline" type="button" onClick={() => { navigator.clipboard?.writeText(window.location.href).then(() => showToast("Dossier link copied.")).catch(() => showToast("Clipboard unavailable.")); }}><ArrowUpRight size={15} /> Copy link</button>
+        <Link className="atlas-text-link" to="/matchups/new"><Swords size={15} /> Use in matchup</Link>
+      </div>
+      <section className="platform-section">
+        <div className="platform-section-heading"><div><span className="section-kicker">INCARNATIONS & CONTINUITY</span><h2>Select a version</h2></div><span>EXACT VERSION REQUIRED FOR ANALYSIS</span></div>
+        {versions.length ? (
+          <div className="platform-version-grid">
+            {versions.map(version => (
+              <button key={version.id} type="button" className={"platform-version-choice " + (activeVersion?.id === version.id ? "is-selected" : "")} onClick={() => { setActiveVersion(version); navigate("/entity/" + entity.slug + "/versions/" + version.slug, { replace: true }); }}>
+                <span>{version.canon_status || "CANON STATUS UNKNOWN"}</span><strong>{version.label}</strong><small>{version.continuity || "Continuity not specified"} · {version.status}</small>
+              </button>
+            ))}
+          </div>
+        ) : <EmptyState title="No version records yet" body="Create a version record before submitting capabilities, feats or matchup configurations. Entity identity does not imply a composite version." />}
+      </section>
+      {activeVersion && (
+        <>
+          <section className="platform-section">
+            <div className="platform-section-heading"><div><span className="section-kicker">CAPABILITY RECORDS</span><h2>{activeVersion.label}</h2></div><span>{capabilities.length} CLAIMS</span></div>
+            {capabilities.length ? <div className="platform-info-grid">{capabilities.map(item => <article key={item.id} className="platform-info-card"><span>{item.dimension || "CAPABILITY"}</span><h3>{item.capability_name}</h3><p>{item.mechanism || "Mechanism not documented."}</p><small>LIMITATIONS · {item.limitations || "Not recorded"} · STATUS {item.status}</small></article>)}</div> : <EmptyState title="No capability claims" body="Capabilities will appear when claims are submitted and linked to this exact version." />}
+          </section>
+          <section className="platform-section">
+            <div className="platform-section-heading"><div><span className="section-kicker">FEATS & EVIDENCE</span><h2>Trace every claim</h2></div><span>{evidence.length} RECORDS</span></div>
+            {evidence.length ? <div className="platform-list">{evidence.map(item => <Link className="platform-list-row" key={item.id} to={"/research/evidence/" + item.id}><span><strong>{item.summary}</strong><small>{item.evidence_type} · {item.canon_status} · {item.review_status} · {item.reliability_grade || "UNRATED"}</small><p>{item.context || "No context submitted."}</p></span><ArrowUpRight size={16} /></Link>)}</div> : <EmptyState title="No evidence linked to this version" body="Unverified or absent claims are not filled with generated feats or unsupported statistics." />}
+          </section>
+          <section className="platform-section">
+            <div className="platform-section-heading"><div><span className="section-kicker">SOURCE REFERENCES</span><h2>Original material</h2></div><span>{sources.length} SOURCES</span></div>
+            {sources.length ? <div className="platform-list">{sources.map(item => <a className="platform-list-row" key={item.id} href={item.url || "#"} target="_blank" rel="noreferrer"><span><strong>{item.title}</strong><small>{item.publisher_or_host || item.source_type} · {item.reliability_grade || "NOT GRADED"} · {item.review_status}</small><p>{item.locator || "No issue, chapter, episode or page locator recorded."}</p></span><ArrowUpRight size={16} /></a>)}</div> : <EmptyState title="No source references yet" body="Sources will appear when they are linked to evidence for the selected version." />}
+          </section>
+        </>
+      )}
+      <p className="atlas-caption">An identity record is not a feat record. Evidence, source reliability, interpretation quality and continuity are kept separate.</p>
+    </div>
+  );
+}
+
+export function UniverseHubPage() {
+  const { universeSlug } = useParams();
+  const [universe, setUniverse] = useState(null);
+  const [entities, setEntities] = useState([]);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    if (!supabase) return () => { active = false; };
+    (async () => {
+      const { data, error: queryError } = await supabase.from("universes").select("*").eq("slug", universeSlug).maybeSingle();
+      if (!active) return;
+      if (queryError) { setError(queryError.message); return; }
+      setUniverse(data);
+      if (data) {
+        const { data: linked, error: linkedError } = await supabase.from("entities").select("*").eq("primary_universe_id", data.id).order("name").limit(120);
+        if (!active) return;
+        if (linkedError) setError(linkedError.message);
+        else setEntities(linked || []);
+      }
+    })();
+    return () => { active = false; };
+  }, [universeSlug]);
+  return (
+    <div className="atlas-feature-page platform-page">
+      <PageIntro eyebrow="UNIVERSE HUB / CONTINUITY INDEX" title={universe?.name || universeSlug.replace(/-/g, " ")} description={universe?.description || "Explore source works, continuities, entities and relationships connected to this universe."} action={<Link className="atlas-text-link" to="/explore?tab=universes"><ArrowLeft size={15} /> All universes</Link>} />
+      <DataNotice error={error} />
+      {universe ? (
+        <>
+          <div className="platform-meta-row"><MetaPill>{universe.category}</MetaPill><MetaPill>{universe.status}</MetaPill><MetaPill>{entities.length} LINKED ENTITIES</MetaPill></div>
+          <section className="platform-section"><div className="platform-section-heading"><div><span className="section-kicker">INDEXED IDENTITIES</span><h2>People, teams & beings</h2></div></div>{entities.length ? <div className="platform-card-grid">{entities.map(item => <RecordCard key={item.id} record={item} type={(item.entity_type || "ENTITY").toUpperCase()} to={"/entity/" + item.slug} />)}</div> : <EmptyState title="No entities linked yet" body="Entity records appear here after their primary universe relationship is recorded." />}</section>
+        </>
+      ) : !error ? <EmptyState title="Universe not found" body="This route does not resolve to a published universe record." /> : null}
+    </div>
+  );
+}
+
+export function MatchupsPage() {
+  const { rows, loading, error } = useRows("matchups", "created_at", 160);
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("all");
+  const filtered = rows.filter(item => {
+    const matchesText = [item.title, item.description, item.status].join(" ").toLowerCase().includes(query.toLowerCase());
+    return matchesText && (status === "all" || item.status === status);
+  });
+  return (
+    <div className="atlas-feature-page platform-page">
+      <PageIntro eyebrow="MATCHUPS / COMPARISON INDEX" title={<>A question, with <em>conditions.</em></>} description="Browse configurations and published reports. A matchup setup is not a verdict; an analysis appears only when a report has been stored and reviewed." action={<Link className="atlas-button atlas-button--dark" to="/matchups/new"><Plus size={15} /> Create matchup</Link>} />
+      <div className="platform-filter-row"><label className="platform-search-field"><Search size={16} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search matchup titles…" /></label><label className="platform-sort"><Filter size={15} /><select value={status} onChange={event => setStatus(event.target.value)}><option value="all">All statuses</option><option value="draft">Draft</option><option value="published">Published</option><option value="under_review">Under review</option><option value="archived">Archived</option></select></label><span className="platform-result-count">{filtered.length} MATCHUPS</span></div>
+      <DataNotice error={error} />
+      {loading ? <LoadingLine>Loading matchup index…</LoadingLine> : filtered.length ? <div className="platform-list">{filtered.map(item => <Link className="platform-list-row" key={item.id} to={"/matchups/" + item.slug}><span><strong>{item.title}</strong><small>{item.status} · CREATED {new Date(item.created_at).toLocaleDateString()}</small><p>{item.description || "No additional conditions supplied."}</p></span><ArrowUpRight size={17} /></Link>)}</div> : <EmptyState title="No matchups found" body={rows.length ? "Adjust your search or status filter." : "The matchup index will fill as users create version-specific comparisons."} />}
+    </div>
+  );
+}
+
+export function MatchupCreatePage() {
+  const { rows: entities, loading: entitiesLoading } = useRows("entities", "name", 300);
+  const { rows: versions, loading: versionsLoading, error } = useRows("entity_versions", "created_at", 500);
+  const { user } = useAuth();
+  const { showToast } = useToast();
+  const navigate = useNavigate();
+  const [sideA, setSideA] = useState("");
+  const [sideB, setSideB] = useState("");
+  const [ruleset, setRuleset] = useState("standard");
+  const [environment, setEnvironment] = useState("Neutral environment");
+  const [distance, setDistance] = useState("Standard starting distance");
+  const [victory, setVictory] = useState("Incapacitation");
+  const [preparation, setPreparation] = useState("No preparation");
+  const [knowledge, setKnowledge] = useState("No prior knowledge");
+  const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const entityMap = useMemo(() => new Map(entities.map(item => [item.id, item])), [entities]);
+  const options = versions.map(version => ({ ...version, entity: entityMap.get(version.entity_id) })).filter(item => item.entity);
+  const first = options.find(item => item.id === sideA);
+  const second = options.find(item => item.id === sideB);
+  const save = async event => {
+    event.preventDefault();
+    if (!supabase) { showToast("Connect Supabase before creating a matchup."); return; }
+    if (!user) { navigate("/auth/sign-in", { state: { from: { pathname: "/matchups/new" } } }); return; }
+    if (!first || !second || sideA === sideB) { showToast("Choose two different version records."); return; }
+    setSaving(true);
+    const title = first.entity.name + " vs " + second.entity.name;
+    const slug = slugify(title) + "-" + Date.now().toString(36);
+    const configuration = {
+      ruleset, participants: [{ entity_version_id: sideA, side: "side_a" }, { entity_version_id: sideB, side: "side_b" }],
+      environment, starting_distance: distance, victory_condition: victory, preparation, prior_knowledge: knowledge,
+      notes: notes.trim(), verdict: null
+    };
+    const { data: matchup, error: matchupError } = await supabase.from("matchups").insert({
+      slug, title, description: notes.trim(), configuration, status: "published", created_by: user.id
+    }).select("*").single();
+    if (matchupError) { showToast({ title: "Matchup could not be saved", description: matchupError.message }); setSaving(false); return; }
+    const { error: participantError } = await supabase.from("matchup_participants").insert([
+      { matchup_id: matchup.id, entity_version_id: sideA, side: "side_a", participant_order: 1 },
+      { matchup_id: matchup.id, entity_version_id: sideB, side: "side_b", participant_order: 1 }
+    ]);
+    if (participantError) { showToast({ title: "Participants could not be attached", description: participantError.message }); setSaving(false); return; }
+    showToast("Matchup configuration published. No verdict has been generated.");
+    navigate("/matchups/" + matchup.slug);
+    setSaving(false);
+  };
+  return (
+    <div className="atlas-feature-page platform-page">
+      <PageIntro eyebrow="MATCHUPS / CREATE" title={<>Set the <em>ground rules.</em></>} description="Choose exact incarnations and make every assumption visible before a matchup is analysed." action={<Link className="atlas-text-link" to="/matchups"><ArrowLeft size={15} /> All matchups</Link>} />
+      <DataNotice error={error} />
+      {entitiesLoading || versionsLoading ? <LoadingLine>Loading version catalogue…</LoadingLine> : !options.length ? <EmptyState title="Version records are needed first" body="There are no version-specific records available yet. Add entities and their exact incarnations before creating a comparison." action={<Link className="atlas-button atlas-button--dark" to="/explore">Open Explore</Link>} /> : (
+        <form className="platform-form" onSubmit={save}>
+          <section className="platform-form-section"><span className="section-kicker">01 / PARTICIPANTS</span><h2>Who is being compared?</h2><div className="platform-form-grid"><label>Side A<select required value={sideA} onChange={event => setSideA(event.target.value)}><option value="">Choose an exact version</option>{options.map(item => <option key={item.id} value={item.id}>{item.entity.name} — {item.label}</option>)}</select></label><label>Side B<select required value={sideB} onChange={event => setSideB(event.target.value)}><option value="">Choose a different version</option>{options.filter(item => item.id !== sideA).map(item => <option key={item.id} value={item.id}>{item.entity.name} — {item.label}</option>)}</select></label></div>{first && second && <div className="platform-versus-preview"><span>{first.entity.name}<small>{first.label}</small></span><b>VS</b><span>{second.entity.name}<small>{second.label}</small></span></div>}</section>
+          <section className="platform-form-section"><span className="section-kicker">02 / RULESET</span><h2>Define the scope</h2><div className="platform-form-grid"><label>Analysis ruleset<select value={ruleset} onChange={event => setRuleset(event.target.value)}><option value="standard">Standard matchup</option><option value="canon_only">Canon-only evidence</option><option value="composite_opt_in">Composite (explicit opt-in)</option><option value="custom">Custom conditions</option></select></label><label>Starting environment<input value={environment} onChange={event => setEnvironment(event.target.value)} /></label><label>Starting distance<input value={distance} onChange={event => setDistance(event.target.value)} /></label><label>Victory condition<select value={victory} onChange={event => setVictory(event.target.value)}><option>Incapacitation</option><option>Submission</option><option>Objective completion</option><option>Other / custom</option></select></label><label>Preparation<select value={preparation} onChange={event => setPreparation(event.target.value)}><option>No preparation</option><option>One day</option><option>One week</option><option>Standard equipment only</option></select></label><label>Prior knowledge<select value={knowledge} onChange={event => setKnowledge(event.target.value)}><option>No prior knowledge</option><option>Basic awareness</option><option>Full information</option><option>Custom</option></select></label></div><label>Additional conditions<textarea value={notes} onChange={event => setNotes(event.target.value)} rows={4} maxLength={3000} placeholder="Equipment limits, resources, restrictions, win conditions, source continuity or other assumptions." /></label><p className="platform-form-note">Publishing creates a matchup configuration only. It does not create a battle analysis or assign a winner.</p><div className="platform-form-actions"><button className="atlas-button atlas-button--dark" type="submit" disabled={saving}>{saving ? "Publishing…" : "Publish matchup setup"} <ArrowUpRight size={15} /></button><span>Sign-in required · Version-specific participants</span></div>
+        </form>
+      )}
+    </div>
+  );
+}
+
+export function MatchupDetailPage() {
+  const { matchupSlug } = useParams();
+  const [matchup, setMatchup] = useState(null);
+  const [participants, setParticipants] = useState([]);
+  const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    if (!supabase) { setLoading(false); return () => { active = false; }; }
+    (async () => {
+      const { data, error: matchupError } = await supabase.from("matchups").select("*").eq("slug", matchupSlug).maybeSingle();
+      if (!active) return;
+      if (matchupError) { setError(matchupError.message); setLoading(false); return; }
+      setMatchup(data);
+      if (!data) { setLoading(false); return; }
+      const [participantResult, reportResult] = await Promise.all([
+        supabase.from("matchup_participants").select("*").eq("matchup_id", data.id).order("participant_order"),
+        supabase.from("matchup_reports").select("*").eq("matchup_id", data.id).order("report_version", { ascending: false }).limit(1).maybeSingle()
+      ]);
+      if (!active) return;
+      const versionIds = (participantResult.data || []).map(item => item.entity_version_id);
+      const { data: versionRows } = versionIds.length ? await supabase.from("entity_versions").select("*").in("id", versionIds) : { data: [] };
+      const entityIds = [...new Set((versionRows || []).map(item => item.entity_id))];
+      const { data: entityRows } = entityIds.length ? await supabase.from("entities").select("*").in("id", entityIds) : { data: [] };
+      const byEntity = new Map((entityRows || []).map(item => [item.id, item]));
+      const byVersion = new Map((versionRows || []).map(item => [item.id, { ...item, entity: byEntity.get(item.entity_id) }]));
+      setParticipants((participantResult.data || []).map(item => ({ ...item, version: byVersion.get(item.entity_version_id) })));
+      setReport(reportResult.data || null);
+      if (participantResult.error || reportResult.error) setError(participantResult.error?.message || reportResult.error?.message || "");
+      setLoading(false);
+    })().catch(queryError => { if (active) { setError(queryError.message || "Unable to load matchup."); setLoading(false); } });
+    return () => { active = false; };
+  }, [matchupSlug]);
+  if (loading) return <div className="atlas-feature-page"><LoadingLine>Loading matchup record…</LoadingLine></div>;
+  if (!matchup) return <div className="atlas-feature-page"><EmptyState title="Matchup not found" body={error || "This route does not resolve to a matchup record."} action={<Link className="atlas-button atlas-button--dark" to="/matchups">Matchup index</Link>} /></div>;
+  const sideA = participants.filter(item => item.side === "side_a" || item.side === "A");
+  const sideB = participants.filter(item => item.side === "side_b" || item.side === "B");
+  const config = matchup.configuration || {};
+  return (
+    <div className="atlas-feature-page platform-page">
+      <PageIntro eyebrow="MATCHUP / REPRODUCIBLE CONFIGURATION" title={matchup.title} description={matchup.description || "This matchup record preserves the participants, rules and assumptions used for the comparison."} action={<Link className="atlas-text-link" to="/matchups"><ArrowLeft size={15} /> All matchups</Link>} />
+      <DataNotice error={error} />
+      <div className="platform-versus-panel"><div><span>SIDE A</span><h2>{sideA.map(item => item.version?.entity?.name || "Unknown entity").join(" + ") || "Participant missing"}</h2><small>{sideA.map(item => item.version?.label).filter(Boolean).join(" · ")}</small></div><b>VS</b><div><span>SIDE B</span><h2>{sideB.map(item => item.version?.entity?.name || "Unknown entity").join(" + ") || "Participant missing"}</h2><small>{sideB.map(item => item.version?.label).filter(Boolean).join(" · ")}</small></div></div>
+      <section className="platform-section"><div className="platform-section-heading"><div><span className="section-kicker">COMPARISON CONFIGURATION</span><h2>What was assumed?</h2></div><MetaPill>{matchup.status}</MetaPill></div><div className="platform-config-grid">{[["Ruleset", config.ruleset], ["Environment", config.environment], ["Starting distance", config.starting_distance], ["Victory condition", config.victory_condition], ["Preparation", config.preparation], ["Prior knowledge", config.prior_knowledge]].map(([label,value]) => <div key={label}><small>{label}</small><strong>{value || "Not specified"}</strong></div>)}</div>{config.notes && <p className="platform-config-notes">{config.notes}</p>}</section>
+      <section className="platform-section"><div className="platform-section-heading"><div><span className="section-kicker">BATTLE ENGINE / REPORT</span><h2>Analysis & verdict</h2></div></div>{report ? <div className="platform-report-card"><MetaPill>{report.verdict_type.replace(/_/g, " ")}</MetaPill><h3>{report.verdict_summary || "Report created without a summary."}</h3><p>{report.uncertainty_notes || "No uncertainty notes recorded."}</p><small>REPORT VERSION {report.report_version} · VERIFICATION {report.verification_status}</small></div> : <EmptyState title="No analysis report exists yet" body="This is a published matchup configuration, not a generated verdict. The Battle Engine will attach a report only after its analysis and verification pipeline completes." />}</section>
+      <div className="platform-inline-actions"><Link className="atlas-button atlas-button--dark" to={"/community?tab=debates&matchup=" + matchup.id}><MessageSquare size={15} /> Discuss matchup</Link><Link className="atlas-text-link" to="/research">Open Research <ArrowUpRight size={15} /></Link></div>
+    </div>
+  );
+}
+
+export function ResearchPage() {
+  const { rows: evidence, loading: evidenceLoading, error: evidenceError } = useRows("evidence_records", "created_at", 240);
+  const { rows: sources, loading: sourcesLoading, error: sourcesError } = useRows("source_records", "created_at", 200);
+  const activeTab = useActiveTab("evidence");
+  const [query, setQuery] = useState("");
+  const [review, setReview] = useState("all");
+  const filteredEvidence = evidence.filter(item => [item.summary, item.context, item.evidence_type, item.review_status].join(" ").toLowerCase().includes(query.toLowerCase()) && (review === "all" || item.review_status === review));
+  const filteredSources = sources.filter(item => [item.title, item.publisher_or_host, item.locator, item.source_type].join(" ").toLowerCase().includes(query.toLowerCase()));
+  const tabs = [{ value: "evidence", label: "Evidence" }, { value: "sources", label: "Source library" }, { value: "queue", label: "Review queue" }];
+  return (
+    <div className="atlas-feature-page platform-page">
+      <PageIntro eyebrow="RESEARCH / EVIDENCE INTELLIGENCE" title={<>Every claim needs <em>context.</em></>} description="Inspect evidence, follow source records and distinguish submitted claims from reviewed material. Popularity and AI-generated interpretation never substitute for verification." />
+      <TabBar tabs={tabs} active={activeTab} pathname="/research" />
+      <div className="platform-filter-row"><label className="platform-search-field"><Search size={16} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={activeTab === "sources" ? "Search source title, publisher or locator…" : "Search evidence claims and context…"} /></label>{activeTab !== "sources" && <label className="platform-sort"><Filter size={15} /><select value={review} onChange={event => setReview(event.target.value)}><option value="all">All review states</option><option value="submitted">Submitted</option><option value="needs_review">Needs review</option><option value="verified">Verified</option><option value="disputed">Disputed</option><option value="rejected">Rejected</option><option value="outdated">Outdated</option></select></label>}</div>
+      <DataNotice error={evidenceError || sourcesError} />
+      {activeTab === "sources" ? (
+        sourcesLoading ? <LoadingLine>Loading source library…</LoadingLine> : filteredSources.length ? <div className="platform-list">{filteredSources.map(item => <article className="platform-list-row platform-list-row--static" key={item.id}><span><strong>{item.title}</strong><small>{item.publisher_or_host || item.source_type} · {item.reliability_grade || "NOT GRADED"} · {item.review_status}</small><p>{item.locator || "No source locator added."}</p></span>{item.url && <a href={item.url} target="_blank" rel="noreferrer" aria-label={"Open " + item.title}><ArrowUpRight size={17} /></a>}</article>)}</div> : <EmptyState title="No source records match" body="Sources are added as independent records and linked to evidence, not treated as evidence by themselves." />
+      ) : evidenceLoading ? <LoadingLine>Loading evidence records…</LoadingLine> : (
+        <>
+          {activeTab === "queue" && <div className="platform-queue-note"><ShieldCheck size={17} /><span>Review queue shows submitted and disputed records. Only authorized moderators can change verification status.</span></div>}
+          {filteredEvidence.filter(item => activeTab !== "queue" || ["submitted", "needs_review", "disputed"].includes(item.review_status)).length ? (
+            <div className="platform-list">{filteredEvidence.filter(item => activeTab !== "queue" || ["submitted", "needs_review", "disputed"].includes(item.review_status)).map(item => <Link className="platform-list-row" key={item.id} to={"/research/evidence/" + item.id}><span><strong>{item.summary}</strong><small>{item.evidence_type} · {item.canon_status} · {item.review_status} · {item.reliability_grade || "UNRATED"}</small><p>{item.context || "Context not submitted."}</p></span><ArrowUpRight size={17} /></Link>)}</div>
+          ) : <EmptyState title="No evidence records found" body="Evidence appears when a contribution includes an exact version and source context. Nothing is fabricated to fill an empty research workspace." />}
+        </>
+      )}
+    </div>
+  );
+}
+
+export function EvidenceDetailPage() {
+  const { evidenceSlug } = useParams();
+  const [record, setRecord] = useState(null);
+  const [source, setSource] = useState(null);
+  const [entity, setEntity] = useState(null);
+  const [version, setVersion] = useState(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    if (!supabase) return () => { active = false; };
+    (async () => {
+      const { data, error: queryError } = await supabase.from("evidence_records").select("*").eq("id", evidenceSlug).maybeSingle();
+      if (!active) return;
+      if (queryError) { setError(queryError.message); return; }
+      setRecord(data);
+      if (!data) return;
+      if (data.source_record_id) {
+        const { data: sourceRow } = await supabase.from("source_records").select("*").eq("id", data.source_record_id).maybeSingle();
+        if (active) setSource(sourceRow);
+      }
+      const { data: versionRow } = await supabase.from("entity_versions").select("*").eq("id", data.entity_version_id).maybeSingle();
+      if (!active || !versionRow) return;
+      setVersion(versionRow);
+      const { data: entityRow } = await supabase.from("entities").select("*").eq("id", versionRow.entity_id).maybeSingle();
+      if (active) setEntity(entityRow);
+    })();
+    return () => { active = false; };
+  }, [evidenceSlug]);
+  return (
+    <div className="atlas-feature-page platform-page">
+      <PageIntro eyebrow="RESEARCH / EVIDENCE RECORD" title={record?.summary || "Evidence record"} description="This record keeps the claim, source locator, context, limitations and review history connected." action={<Link className="atlas-text-link" to="/research"><ArrowLeft size={15} /> Research workspace</Link>} />
+      <DataNotice error={error} />
+      {record ? (
+        <div className="platform-evidence-detail">
+          <div className="platform-meta-row"><MetaPill>{record.review_status}</MetaPill><MetaPill>{record.evidence_type}</MetaPill><MetaPill>{record.canon_status}</MetaPill><MetaPill>{record.reliability_grade || "UNRATED"}</MetaPill></div>
+          <section><span className="section-kicker">VERSION CONTEXT</span><h2>{entity?.name || "Entity"} · {version?.label || "Version unavailable"}</h2><p>{version?.continuity || "Continuity not specified."}</p></section>
+          <section><span className="section-kicker">CLAIM CONTEXT</span><h2>What is being claimed?</h2><p>{record.context || "No contextual description was supplied."}</p><small>LOCATOR · {record.locator || "Not specified"}</small></section>
+          <section><span className="section-kicker">ORIGINAL SOURCE</span><h2>{source?.title || "No linked source"}</h2><p>{source?.locator || "No source locator available."}</p>{source?.url && <a href={source.url} target="_blank" rel="noreferrer">Open original source <ArrowUpRight size={14} /></a>}</section>
+          <section><span className="section-kicker">LIMITS & COUNTER-EVIDENCE</span><h2>What could change the interpretation?</h2><p><strong>Limitations</strong> · {record.limitations || "Not recorded."}</p><p><strong>Counter-evidence</strong> · {record.counter_evidence_notes || "Not recorded."}</p></section>
+        </div>
+      ) : <EmptyState title="Evidence record not found" body="This identifier does not resolve to a public evidence record." />}
+    </div>
+  );
+}
+
+export function CommunityPage() {
+  const activeTab = useActiveTab("feed");
+  const { rows: discussions, loading: discussionLoading, error: discussionError, refresh } = useRows("discussions", "created_at", 120);
+  const { rows: events, loading: eventLoading, error: eventError } = useRows("events", "starts_at", 100);
+  const { rows: members, loading: memberLoading, error: memberError } = useRows("profiles", "created_at", 120);
+  const { user } = useAuth();
+  const { showToast } = useToast();
+  const navigate = useNavigate();
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [posting, setPosting] = useState(false);
+  const tabs = [{ value: "feed", label: "Community feed" }, { value: "debates", label: "Debates" }, { value: "events", label: "Events" }, { value: "members", label: "Members" }];
+  const createDiscussion = async event => {
+    event.preventDefault();
+    if (!user) { navigate("/auth/sign-in"); return; }
+    if (!title.trim() || !body.trim()) return;
+    setPosting(true);
+    const { error: postError } = await supabase.from("discussions").insert({ title: title.trim(), body: body.trim(), created_by: user.id });
+    if (postError) showToast({ title: "Discussion could not be published", description: postError.message });
+    else { setTitle(""); setBody(""); showToast("Discussion published."); refresh(); }
+    setPosting(false);
+  };
+  return (
+    <div className="atlas-feature-page platform-page">
+      <PageIntro eyebrow="COMMUNITY / SHARED INVESTIGATION" title={<>Bring a view. Bring <em>evidence.</em></>} description="Discuss interpretations, challenge claims and discover people building useful research. Community activity does not independently verify a factual claim." />
+      <TabBar tabs={tabs} active={activeTab} pathname="/community" />
+      {activeTab === "members" ? (
+        <><DataNotice error={memberError} />{memberLoading ? <LoadingLine>Loading community members…</LoadingLine> : members.length ? <div className="platform-member-grid">{members.map(member => <Link className="platform-member-card" key={member.id} to={"/profile/" + (member.username || member.id)}><span className="platform-avatar">{(member.display_name || member.username || "O").slice(0, 1).toUpperCase()}</span><strong>{member.display_name || member.username || "OMNIVEX member"}</strong><small>@{member.username || "username-pending"}</small><p>{member.bio || "No public bio yet."}</p></Link>)}</div> : <EmptyState title="No public members yet" body="Member profiles appear after an account is created and its public profile is available." />}</>
+      ) : activeTab === "events" ? (
+        <><DataNotice error={eventError} />{eventLoading ? <LoadingLine>Loading community events…</LoadingLine> : events.length ? <div className="platform-event-grid">{events.map(item => <Link className="platform-event-card" key={item.id} to={"/events/" + item.slug}><span><CalendarDays size={17} /> {item.event_type || "COMMUNITY EVENT"}</span><h2>{item.title}</h2><p>{item.description || "Details will be available on the event page."}</p><small>{item.starts_at ? new Date(item.starts_at).toLocaleString() : "Schedule to be announced"} · {item.status}</small></Link>)}</div> : <EmptyState title="No events published" body="Tournaments, weekly challenges and community events will appear once they are published by the team." />}</>
+      ) : (
+        <>
+          <DataNotice error={discussionError} />
+          {activeTab === "feed" && <form className="platform-composer" onSubmit={createDiscussion}><span className="section-kicker">START A THREAD</span><input value={title} onChange={event => setTitle(event.target.value)} placeholder="Give the discussion a clear title" maxLength={140} required /><textarea value={body} onChange={event => setBody(event.target.value)} rows={3} placeholder="Add context, define the scope and include source links where relevant." required /><div><small>Respectful debate · Evidence over popularity</small><button className="atlas-button atlas-button--dark" type="submit" disabled={posting}>{posting ? "Publishing…" : "Publish discussion"} <ArrowUpRight size={14} /></button></div></form>}
+          {discussionLoading ? <LoadingLine>Loading discussions…</LoadingLine> : discussions.length ? <div className="platform-discussion-list">{discussions.filter(item => activeTab !== "debates" || item.matchup_id).map(item => <article className="platform-discussion-card" key={item.id}><div className="platform-discussion-meta"><MetaPill>{item.status}</MetaPill><time>{new Date(item.created_at).toLocaleDateString()}</time></div><h2>{item.title}</h2><p>{item.body}</p><Link className="atlas-text-link" to={"/discussions/" + item.id}>Open discussion <ArrowUpRight size={14} /></Link></article>)}</div> : <EmptyState title="No discussions yet" body="Start a thread to open a new question for the community." />}
+        </>
+      )}
+    </div>
+  );
+}
+
+export function DiscussionDetailPage() {
+  const { discussionId } = useParams();
+  const { user } = useAuth();
+  const { showToast } = useToast();
+  const navigate = useNavigate();
+  const [discussion, setDiscussion] = useState(null);
+  const [argumentsList, setArgumentsList] = useState([]);
+  const [body, setBody] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const load = async () => {
+    if (!supabase) { setLoading(false); return; }
+    const { data, error: queryError } = await supabase.from("discussions").select("*").eq("id", discussionId).maybeSingle();
+    if (queryError) setError(queryError.message);
+    setDiscussion(data);
+    if (data) {
+      const { data: rows } = await supabase.from("arguments").select("*").eq("discussion_id", data.id).eq("status", "visible").order("created_at");
+      setArgumentsList(rows || []);
+    }
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, [discussionId]);
+  const submit = async event => {
+    event.preventDefault();
+    if (!user) { navigate("/auth/sign-in"); return; }
+    const { error: insertError } = await supabase.from("arguments").insert({ discussion_id: discussionId, body: body.trim(), side: "neutral", created_by: user.id });
+    if (insertError) showToast({ title: "Reply could not be posted", description: insertError.message });
+    else { setBody(""); showToast("Reply posted."); load(); }
+  };
+  if (loading) return <div className="atlas-feature-page"><LoadingLine>Opening discussion…</LoadingLine></div>;
+  return <div className="atlas-feature-page platform-page"><PageIntro eyebrow="COMMUNITY / THREAD" title={discussion?.title || "Discussion"} description={discussion?.body || "This discussion record could not be loaded."} action={<Link className="atlas-text-link" to="/community"><ArrowLeft size={15} /> Community</Link>} /><DataNotice error={error} />{discussion && <><form className="platform-composer" onSubmit={submit}><span className="section-kicker">ADD A REPLY</span><textarea rows={4} value={body} onChange={event => setBody(event.target.value)} required placeholder="Make a specific point. Add evidence links where possible."/><button className="atlas-button atlas-button--dark" type="submit">Post reply <ArrowUpRight size={14}/></button></form><div className="platform-discussion-list">{argumentsList.length ? argumentsList.map(item=><article className="platform-discussion-card" key={item.id}><MetaPill>{item.side}</MetaPill><p>{item.body}</p><small>{new Date(item.created_at).toLocaleString()}</small></article>) : <EmptyState title="No replies yet" body="Start with a specific, evidence-aware argument."/>}</div></>}</div>;
+}
+
+export function EventDetailPage() {
+  const { eventSlug } = useParams();
+  const { user } = useAuth();
+  const { showToast } = useToast();
+  const [event, setEvent] = useState(null);
+  const [registered, setRegistered] = useState(false);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    if (!supabase) return () => { active = false; };
+    (async () => {
+      const { data, error: queryError } = await supabase.from("events").select("*").eq("slug", eventSlug).maybeSingle();
+      if (!active) return;
+      if (queryError) setError(queryError.message);
+      setEvent(data);
+      if (data && user) {
+        const { data: row } = await supabase.from("event_registrations").select("id").eq("event_id", data.id).eq("user_id", user.id).maybeSingle();
+        if (active) setRegistered(Boolean(row));
+      }
+    })();
+    return () => { active = false; };
+  }, [eventSlug, user?.id]);
+  const register = async () => {
+    if (!user) { showToast("Sign in to register for this event."); return; }
+    if (registered) {
+      const { error: deleteError } = await supabase.from("event_registrations").delete().eq("event_id", event.id).eq("user_id", user.id);
+      if (deleteError) showToast({ title: "Could not cancel registration", description: deleteError.message });
+      else setRegistered(false);
+    } else {
+      const { error: insertError } = await supabase.from("event_registrations").insert({ event_id: event.id, user_id: user.id });
+      if (insertError && insertError.code !== "23505") showToast({ title: "Registration failed", description: insertError.message });
+      else setRegistered(true);
+    }
+  };
+  return <div className="atlas-feature-page platform-page"><PageIntro eyebrow="COMMUNITY / EVENT" title={event?.title || eventSlug.replace(/-/g, " ")} description={event?.description || "Event details are not available."} action={<Link className="atlas-text-link" to="/community?tab=events"><ArrowLeft size={15} /> All events</Link>} /><DataNotice error={error} />{event && <div className="platform-event-detail"><MetaPill>{event.status}</MetaPill><MetaPill>{event.event_type}</MetaPill><p>{event.starts_at ? "Starts " + new Date(event.starts_at).toLocaleString() : "Schedule to be announced"}</p><button type="button" className="atlas-button atlas-button--dark" onClick={register}>{registered ? "Cancel registration" : "Register for event"}</button></div>}</div>;
+}
+
+export function RankingsPage() {
+  const { rows, loading, error } = useRows("ranking_snapshots", "captured_at", 250);
+  const [type, setType] = useState("all");
+  const [period, setPeriod] = useState("all");
+  const filtered = rows.filter(item => (type === "all" || item.ranking_type === type) && (period === "all" || item.period === period)).sort((a, b) => a.position - b.position);
+  const types = [...new Set(rows.map(item => item.ranking_type).filter(Boolean))];
+  const periods = [...new Set(rows.map(item => item.period).filter(Boolean))];
+  return (
+    <div className="atlas-feature-page platform-page">
+      <PageIntro eyebrow="RANKINGS / DISTINCT SIGNALS" title={<>No single list can <em>measure everything.</em></>} description="Popularity, community activity, recorded outcomes and evidence-based capability are different signals. Each ranking must show its own methodology and time period." />
+      <div className="platform-filter-row"><label className="platform-sort"><Filter size={15}/><select value={type} onChange={event=>setType(event.target.value)}><option value="all">All ranking types</option>{types.map(item=><option key={item} value={item}>{item}</option>)}</select></label><label className="platform-sort"><CalendarDays size={15}/><select value={period} onChange={event=>setPeriod(event.target.value)}><option value="all">All periods</option>{periods.map(item=><option key={item} value={item}>{item}</option>)}</select></label><span className="platform-result-count">{filtered.length} SNAPSHOTS</span></div>
+      <DataNotice error={error}/>
+      {loading ? <LoadingLine>Loading ranking snapshots…</LoadingLine> : filtered.length ? <div className="platform-ranking-list">{filtered.map(item=><article key={item.id} className="platform-ranking-row"><span className="platform-ranking-position">{String(item.position).padStart(2,"0")}</span><div><strong>{item.subject_type === "entity" ? "Entity record" : item.subject_type === "matchup" ? "Matchup record" : item.subject_type}</strong><small>{item.ranking_type} · {item.period}</small></div><span className="platform-ranking-score">{item.score == null ? "—" : Number(item.score).toFixed(2)}</span></article>)}</div> : <EmptyState title="No ranking snapshots available" body="Rankings are published from stored snapshots. OMNIVEX does not invent a leaderboard or present popularity as capability."/>}
+    </div>
+  );
+}
+
+export function LibraryPage() {
+  const { user } = useAuth();
+  const { showToast } = useToast();
+  const activeTab = useActiveTab("saved");
+  const [saved, setSaved] = useState([]);
+  const [notes, setNotes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const load = async () => {
+    if (!supabase || !user) { setSaved([]); setNotes([]); setLoading(false); return; }
+    setLoading(true);
+    const [savedResult, notesResult] = await Promise.all([
+      supabase.from("saved_items").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
+      supabase.from("research_notes").select("*").eq("user_id", user.id).order("updated_at", { ascending: false })
+    ]);
+    if (savedResult.error || notesResult.error) setError(savedResult.error?.message || notesResult.error?.message || "");
+    const rows = savedResult.data || [];
+    const groups = {};
+    rows.forEach(item => { (groups[item.target_type] ||= []).push(item.target_id); });
+    const [entities, universes, matchups, evidence] = await Promise.all([
+      groups.entity?.length ? supabase.from("entities").select("id,name,slug").in("id", groups.entity) : Promise.resolve({ data: [] }),
+      groups.universe?.length ? supabase.from("universes").select("id,name,slug").in("id", groups.universe) : Promise.resolve({ data: [] }),
+      groups.matchup?.length ? supabase.from("matchups").select("id,title,slug").in("id", groups.matchup) : Promise.resolve({ data: [] }),
+      groups.evidence?.length ? supabase.from("evidence_records").select("id,summary").in("id", groups.evidence) : Promise.resolve({ data: [] })
+    ]);
+    const records = {};
+    [["entity", entities], ["universe", universes], ["matchup", matchups], ["evidence", evidence]].forEach(([kind, result]) => (result.data || []).forEach(item => { records[kind + ":" + item.id] = item; }));
+    setSaved(rows.map(item => ({ ...item, record: records[item.target_type + ":" + item.target_id] })));
+    setNotes(notesResult.data || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, [user?.id]);
+  const remove = async item => {
+    const { error: deleteError } = await supabase.from("saved_items").delete().eq("id", item.id).eq("user_id", user.id);
+    if (deleteError) showToast({ title: "Could not remove item", description: deleteError.message });
+    else { setSaved(old => old.filter(row => row.id !== item.id)); showToast("Removed from library."); }
+  };
+  const tabs = [{ value: "saved", label: "Saved items" }, { value: "notes", label: "Research notes" }];
+  const savedLink = item => {
+    const record = item.record;
+    if (item.target_type === "entity") return "/entity/" + (record?.slug || "");
+    if (item.target_type === "universe") return "/universe/" + (record?.slug || "");
+    if (item.target_type === "matchup") return "/matchups/" + (record?.slug || "");
+    if (item.target_type === "evidence") return "/research/evidence/" + item.target_id;
+    return "/library";
+  };
+  return (
+    <div className="atlas-feature-page platform-page">
+      <PageIntro eyebrow="LIBRARY / PERSONAL INDEX" title={<>Keep what matters <em>close.</em></>} description={user ? "Your saved records and private research notes are scoped to your account." : "Sign in to save entities, matchups, evidence and research notes."} action={!user && <Link className="atlas-button atlas-button--dark" to="/auth/sign-in"><LogIn size={15}/> Sign in</Link>} />
+      <TabBar tabs={tabs} active={activeTab} pathname="/library"/>
+      {!user ? <EmptyState title="Your library is private" body="Sign in to access saved items and notes." action={<Link className="atlas-button atlas-button--dark" to="/auth/sign-in">Sign in</Link>}/> : loading ? <LoadingLine>Opening your library…</LoadingLine> : activeTab === "notes" ? <><div className="platform-library-actions"><span>{notes.length} PRIVATE NOTES</span><Link className="atlas-button atlas-button--dark" to="/library/notes/new">Create note <Plus size={14}/></Link></div>{notes.length ? <div className="platform-list">{notes.map(item=><article className="platform-list-row platform-list-row--static" key={item.id}><span><strong>{item.title}</strong><small>UPDATED {new Date(item.updated_at).toLocaleString()}</small><p>{(item.body || "").slice(0,180) || "Empty note"}</p></span></article>)}</div> : <EmptyState title="No research notes yet" body="Private notes appear here when you create them."/>}</> : saved.length ? <div className="platform-list">{saved.map(item=><div className="platform-list-row" key={item.id}><Link to={savedLink(item)}><span><strong>{item.record?.name || item.record?.title || item.record?.summary || "Record unavailable"}</strong><small>{item.target_type.toUpperCase()} · SAVED {new Date(item.created_at).toLocaleDateString()}</small></span></Link><button type="button" className="platform-icon-button" onClick={()=>remove(item)} aria-label="Remove from library"><X size={16}/></button></div>)}</div> : <EmptyState title="Your saved library is empty" body="Use Save on an entity or matchup dossier to keep it here."/>}
+      <DataNotice error={error}/>
+    </div>
+  );
+}
+
+export function LibraryNotePage() {
+  const { user } = useAuth();
+  const { showToast } = useToast();
+  const navigate = useNavigate();
+  const { noteId } = useParams();
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [loading, setLoading] = useState(Boolean(noteId));
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    let active = true;
+    if (!noteId || !supabase || !user) { setLoading(false); return () => { active = false; }; }
+    supabase.from("research_notes").select("*").eq("id", noteId).eq("user_id", user.id).maybeSingle()
+      .then(({ data, error }) => { if (!active) return; if (error) showToast({ title: "Could not load note", description: error.message }); setTitle(data?.title || ""); setBody(data?.body || ""); setLoading(false); });
+    return () => { active = false; };
+  }, [noteId, user?.id]);
+  const save = async event => {
+    event.preventDefault();
+    if (!user || !supabase) { navigate("/auth/sign-in"); return; }
+    setSaving(true);
+    const payload = { user_id: user.id, title: title.trim() || "Untitled note", body, updated_at: new Date().toISOString() };
+    const result = noteId
+      ? await supabase.from("research_notes").update({ title: payload.title, body, updated_at: payload.updated_at }).eq("id", noteId).eq("user_id", user.id).select("id").single()
+      : await supabase.from("research_notes").insert(payload).select("id").single();
+    if (result.error) showToast({ title: "Note could not be saved", description: result.error.message });
+    else { showToast("Private note saved."); navigate("/library?tab=notes"); }
+    setSaving(false);
+  };
+  if (!user) return <div className="atlas-feature-page"><EmptyState title="Sign in to create private notes" body="Your research notes are owner-only account data." action={<Link className="atlas-button atlas-button--dark" to="/auth/sign-in">Sign in</Link>}/></div>;
+  if (loading) return <div className="atlas-feature-page"><LoadingLine>Loading private note…</LoadingLine></div>;
+  return <div className="atlas-feature-page platform-page"><PageIntro eyebrow="LIBRARY / PRIVATE RESEARCH" title={<>A place to think <em>clearly.</em></>} description="Private working notes are not public claims or verified evidence." action={<Link className="atlas-text-link" to="/library?tab=notes"><ArrowLeft size={15}/> Back to Library</Link>}/><form className="platform-form platform-note-form" onSubmit={save}><label>Note title<input value={title} onChange={event=>setTitle(event.target.value)} maxLength={120} placeholder="Untitled research note"/></label><label>Notes<textarea value={body} onChange={event=>setBody(event.target.value)} rows={16} placeholder="Questions, ideas, source URLs and observations…"/></label><button className="atlas-button atlas-button--dark" type="submit" disabled={saving}>{saving?"Saving…":"Save private note"} <Check size={15}/></button></form></div>;
+}
+
+export function ProfilePage() {
+  const { username } = useParams();
+  const { user } = useAuth();
+  const { showToast } = useToast();
+  const [profile, setProfile] = useState(null);
+  const [stats, setStats] = useState({ discussions: 0, matchups: 0, evidence: 0 });
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [displayName, setDisplayName] = useState("");
+  const [bio, setBio] = useState("");
+  const isSelf = username === "me" || (!username && Boolean(user));
+  useEffect(() => {
+    let active = true;
+    if (!supabase) { setLoading(false); return () => { active = false; }; }
+    (async () => {
+      let query = supabase.from("profiles").select("*");
+      if (isSelf && user) query = query.eq("id", user.id);
+      else query = query.eq("username", username);
+      const { data, error } = await query.maybeSingle();
+      if (!active) return;
+      if (error) showToast({ title: "Profile could not be loaded", description: error.message });
+      setProfile(data);
+      setDisplayName(data?.display_name || "");
+      setBio(data?.bio || "");
+      if (data) {
+        const [d, m, e] = await Promise.all([
+          supabase.from("discussions").select("id", { count: "exact", head: true }).eq("created_by", data.id),
+          supabase.from("matchups").select("id", { count: "exact", head: true }).eq("created_by", data.id),
+          supabase.from("evidence_records").select("id", { count: "exact", head: true }).eq("submitted_by", data.id)
+        ]);
+        if (active) setStats({ discussions: d.count || 0, matchups: m.count || 0, evidence: e.count || 0 });
+      }
+      setLoading(false);
+    })();
+    return () => { active = false; };
+  }, [username, user?.id]);
+  const saveProfile = async event => {
+    event.preventDefault();
+    const { data, error } = await supabase.from("profiles").update({ display_name: displayName.trim(), bio: bio.trim(), updated_at: new Date().toISOString() }).eq("id", user.id).select("*").single();
+    if (error) showToast({ title: "Profile could not be saved", description: error.message });
+    else { setProfile(data); setEditing(false); showToast("Profile updated."); }
+  };
+  if (loading) return <div className="atlas-feature-page"><LoadingLine>Loading profile…</LoadingLine></div>;
+  if (!profile) return <div className="atlas-feature-page"><EmptyState title="Profile not found" body={isSelf ? "Sign in and complete your profile to create a public page." : "This username does not resolve to a public profile."} action={<Link className="atlas-button atlas-button--dark" to="/auth/sign-in">Sign in</Link>}/></div>;
+  return (
+    <div className="atlas-feature-page platform-page">
+      <PageIntro eyebrow={isSelf ? "YOUR PROFILE" : "COMMUNITY MEMBER"} title={profile.display_name || profile.username || "OMNIVEX member"} description={profile.bio || "No public bio has been added yet."} action={isSelf && <button className="atlas-button atlas-button--dark" onClick={()=>setEditing(value=>!value)} type="button">{editing ? "Cancel edit" : "Edit profile"}</button>} />
+      <div className="platform-profile-strip"><span className="platform-avatar platform-avatar--large">{(profile.display_name || profile.username || "O").slice(0,1).toUpperCase()}</span><div><strong>@{profile.username || "username-pending"}</strong><small>MEMBER SINCE {new Date(profile.created_at).toLocaleDateString()}</small></div></div>
+      {editing && isSelf && <form className="platform-composer" onSubmit={saveProfile}><label>Display name<input value={displayName} onChange={event=>setDisplayName(event.target.value)} maxLength={60}/></label><label>Public bio<textarea value={bio} onChange={event=>setBio(event.target.value)} rows={3} maxLength={240}/></label><button className="atlas-button atlas-button--dark" type="submit">Save profile <Check size={15}/></button></form>}
+      <div className="platform-profile-stats"><div><strong>{stats.discussions}</strong><small>DISCUSSIONS</small></div><div><strong>{stats.matchups}</strong><small>MATCHUPS CREATED</small></div><div><strong>{stats.evidence}</strong><small>EVIDENCE SUBMISSIONS</small></div></div>
+      {isSelf && <div className="platform-inline-actions"><Link className="atlas-button atlas-button--dark" to="/library"><Bookmark size={15}/> Open library</Link><button className="atlas-button atlas-button--outline" type="button" onClick={async()=>{await supabase.auth.signOut();showToast("Signed out.");}}>Sign out</button></div>}
+    </div>
+  );
+}
