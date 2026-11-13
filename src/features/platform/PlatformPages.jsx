@@ -1086,6 +1086,7 @@ export function SourceDetailPage() {
   const [error, setError] = useState("");
   const [analysisError, setAnalysisError] = useState("");
   const [analysisResult, setAnalysisResult] = useState(null);
+  const [aiConfigured, setAiConfigured] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState(null);
@@ -1129,6 +1130,17 @@ export function SourceDetailPage() {
     });
     return () => { active = false; };
   }, [sourceId]);
+
+  useEffect(() => {
+    let active = true;
+    if (!user || !supabase) { setAiConfigured(null); return () => { active = false; }; }
+    supabase.functions.invoke("omnivex-research", { body: { action: "ai_status" } })
+      .then(({ data, error }) => {
+        if (active) setAiConfigured(!error && data?.configured === true);
+      })
+      .catch(() => { if (active) setAiConfigured(false); });
+    return () => { active = false; };
+  }, [user?.id]);
 
   const runSourceAnalysis = async () => {
     if (!user) { navigate("/auth/sign-in"); return; }
@@ -1206,12 +1218,13 @@ export function SourceDetailPage() {
               </select>
             </label>
             <div className="research-ai-actions">
-              <button className="atlas-button atlas-button--dark" type="button" onClick={runSourceAnalysis} disabled={analyzing || scanning}>{analyzing ? "Inspecting source…" : "Extract evidence & capabilities"} <ArrowRight size={14}/></button>
-              <button className="atlas-button atlas-button--outline" type="button" onClick={scanContradictions} disabled={analyzing || scanning}>{scanning ? "Checking consistency…" : "Scan for contradictions"} <ShieldCheck size={14}/></button>
+              <button className="atlas-button atlas-button--dark" type="button" onClick={runSourceAnalysis} disabled={analyzing || scanning || aiConfigured === false}>{analyzing ? "Inspecting source…" : "Extract evidence & capabilities"} <ArrowRight size={14}/></button>
+              <button className="atlas-button atlas-button--outline" type="button" onClick={scanContradictions} disabled={analyzing || scanning || aiConfigured === false}>{scanning ? "Checking consistency…" : "Scan for contradictions"} <ShieldCheck size={14}/></button>
             </div>
           </div>
         ) : <EmptyState title="No linked entity version" body="Connect this source to a character/entity dossier before extracting evidence from it."/>}
         {!user && <p className="platform-form-note">Sign in to submit research generated from a source.</p>}
+        {user && aiConfigured === false && <p className="platform-notice">AI extraction is not configured yet. Add <code>GEMINI_API_KEY</code> in Supabase → Edge Functions → Secrets. The key stays on the server and is never included in the website bundle.</p>}
         {analysisError && <p className="platform-notice platform-notice--error">{analysisError}</p>}
         {analysisResult && <div className="research-ai-result">
           <MetaPill>{analysisResult.status?.replace(/_/g, " ")}</MetaPill>
