@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
 import "./styles/field-atlas.css";
 import "./styles/atlas-features.css";
+import "./styles/platform.css";
 
 createRoot(document.getElementById("root")).render(
   <React.StrictMode>
