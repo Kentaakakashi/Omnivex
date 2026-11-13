@@ -780,15 +780,41 @@ export function RankingsPage() {
   const { rows, loading, error } = useRows("ranking_snapshots", "captured_at", 250);
   const [type, setType] = useState("all");
   const [period, setPeriod] = useState("all");
+  const [subjects, setSubjects] = useState({});
   const filtered = rows.filter(item => (type === "all" || item.ranking_type === type) && (period === "all" || item.period === period)).sort((a, b) => a.position - b.position);
   const types = [...new Set(rows.map(item => item.ranking_type).filter(Boolean))];
   const periods = [...new Set(rows.map(item => item.period).filter(Boolean))];
+  useEffect(() => {
+    let active = true;
+    if (!supabase || !rows.length) { setSubjects({}); return () => { active = false; }; }
+    const selected = rows.filter(item => (type === "all" || item.ranking_type === type) && (period === "all" || item.period === period));
+    const idsFor = kind => [...new Set(selected.filter(item => item.subject_type === kind).map(item => item.subject_id))];
+    const entityIds = idsFor("entity");
+    const matchupIds = idsFor("matchup");
+    const universeIds = idsFor("universe");
+    Promise.all([
+      entityIds.length ? supabase.from("entities").select("id,name,slug").in("id", entityIds) : Promise.resolve({ data: [] }),
+      matchupIds.length ? supabase.from("matchups").select("id,title,slug").in("id", matchupIds) : Promise.resolve({ data: [] }),
+      universeIds.length ? supabase.from("universes").select("id,name,slug").in("id", universeIds) : Promise.resolve({ data: [] })
+    ]).then(([entityRows, matchupRows, universeRows]) => {
+      if (!active) return;
+      const map = {};
+      (entityRows.data || []).forEach(item => { map["entity:" + item.id] = { name: item.name, href: "/entity/" + item.slug }; });
+      (matchupRows.data || []).forEach(item => { map["matchup:" + item.id] = { name: item.title, href: "/matchups/" + item.slug }; });
+      (universeRows.data || []).forEach(item => { map["universe:" + item.id] = { name: item.name, href: "/universe/" + item.slug }; });
+      setSubjects(map);
+    });
+    return () => { active = false; };
+  }, [rows, type, period]);
   return (
     <div className="atlas-feature-page platform-page">
       <PageIntro eyebrow="RANKINGS / DISTINCT SIGNALS" title={<>No single list can <em>measure everything.</em></>} description="Popularity, community activity, recorded outcomes and evidence-based capability are different signals. Each ranking must show its own methodology and time period." />
       <div className="platform-filter-row"><label className="platform-sort"><Filter size={15}/><select value={type} onChange={event=>setType(event.target.value)}><option value="all">All ranking types</option>{types.map(item=><option key={item} value={item}>{item}</option>)}</select></label><label className="platform-sort"><CalendarDays size={15}/><select value={period} onChange={event=>setPeriod(event.target.value)}><option value="all">All periods</option>{periods.map(item=><option key={item} value={item}>{item}</option>)}</select></label><span className="platform-result-count">{filtered.length} SNAPSHOTS</span></div>
       <DataNotice error={error}/>
-      {loading ? <LoadingLine>Loading ranking snapshots…</LoadingLine> : filtered.length ? <div className="platform-ranking-list">{filtered.map(item=><article key={item.id} className="platform-ranking-row"><span className="platform-ranking-position">{String(item.position).padStart(2,"0")}</span><div><strong>{item.subject_type === "entity" ? "Entity record" : item.subject_type === "matchup" ? "Matchup record" : item.subject_type}</strong><small>{item.ranking_type} · {item.period}</small></div><span className="platform-ranking-score">{item.score == null ? "—" : Number(item.score).toFixed(2)}</span></article>)}</div> : <EmptyState title="No ranking snapshots available" body="Rankings are published from stored snapshots. OMNIVEX does not invent a leaderboard or present popularity as capability."/>}
+      {loading ? <LoadingLine>Loading ranking snapshots…</LoadingLine> : filtered.length ? <div className="platform-ranking-list">{filtered.map(item => {
+        const subject = subjects[item.subject_type + ":" + item.subject_id];
+        return <article key={item.id} className="platform-ranking-row"><span className="platform-ranking-position">{String(item.position).padStart(2,"0")}</span><div><strong>{subject ? <Link to={subject.href}>{subject.name}</Link> : "Unresolved " + item.subject_type + " record"}</strong><small>{item.ranking_type} · {item.period}</small></div><span className="platform-ranking-score">{item.score == null ? "—" : Number(item.score).toFixed(2)}</span></article>;
+      })}</div> : <EmptyState title="No ranking snapshots available" body="Rankings are published from stored snapshots. OMNIVEX does not invent a leaderboard or present popularity as capability."/>}
     </div>
   );
 }
