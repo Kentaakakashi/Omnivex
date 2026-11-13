@@ -45,7 +45,7 @@ grant update, delete on public.entity_media to authenticated;
 drop policy if exists "approved entity media is public" on public.entity_media;
 create policy "approved entity media is public"
   on public.entity_media for select to anon, authenticated
-  using (approval_status = 'approved');
+  using (approval_status = 'approved' or submitted_by = (select auth.uid()));
 
 drop policy if exists "contributors submit version media" on public.entity_media;
 create policy "contributors submit version media"
