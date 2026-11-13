@@ -612,3 +612,67 @@ with check (bucket_id = 'omnivex-avatars' and (storage.foldername(name))[1] = (s
 drop policy if exists "avatar owner delete" on storage.objects;
 create policy "avatar owner delete" on storage.objects for delete to authenticated
 using (bucket_id = 'omnivex-avatars' and owner_id = (select auth.uid())::text);
+ 
+-- Contributor-safe writes for evidence relationship records.
+drop policy if exists "evidence relation contributor insert" on public.evidence_relations;
+create policy "evidence relation contributor insert"
+  on public.evidence_relations for insert to authenticated
+  with check (
+    created_by = (select auth.uid())
+    and exists (select 1 from public.evidence_records e where e.id = from_evidence_id)
+    and exists (select 1 from public.evidence_records e where e.id = to_evidence_id)
+  );
+drop policy if exists "evidence relation author delete" on public.evidence_relations;
+create policy "evidence relation author delete"
+  on public.evidence_relations for delete to authenticated
+  using (created_by = (select auth.uid()));
+
+-- An argument author may attach or detach evidence from their own argument only.
+drop policy if exists "argument author link evidence" on public.argument_evidence;
+create policy "argument author link evidence"
+  on public.argument_evidence for insert to authenticated
+  with check (
+    exists (
+      select 1 from public.arguments a
+      where a.id = argument_id and a.created_by = (select auth.uid())
+    )
+  );
+drop policy if exists "argument author unlink evidence" on public.argument_evidence;
+create policy "argument author unlink evidence"
+  on public.argument_evidence for delete to authenticated
+  using (
+    exists (
+      select 1 from public.arguments a
+      where a.id = argument_id and a.created_by = (select auth.uid())
+    )
+  );
+drop policy if exists "argument evidence moderator manage" on public.argument_evidence;
+create policy "argument evidence moderator manage"
+  on public.argument_evidence for all to authenticated
+  using ((auth.jwt() -> 'app_metadata' ->> 'omnivex_role') in ('moderator','admin'))
+  with check ((auth.jwt() -> 'app_metadata' ->> 'omnivex_role') in ('moderator','admin'));
+
+-- A report author may attach or detach evidence from their own report only.
+drop policy if exists "report author link evidence" on public.matchup_report_evidence;
+create policy "report author link evidence"
+  on public.matchup_report_evidence for insert to authenticated
+  with check (
+    exists (
+      select 1 from public.matchup_reports r
+      where r.id = report_id and r.created_by = (select auth.uid())
+    )
+  );
+drop policy if exists "report author unlink evidence" on public.matchup_report_evidence;
+create policy "report author unlink evidence"
+  on public.matchup_report_evidence for delete to authenticated
+  using (
+    exists (
+      select 1 from public.matchup_reports r
+      where r.id = report_id and r.created_by = (select auth.uid())
+    )
+  );
+drop policy if exists "report evidence moderator manage" on public.matchup_report_evidence;
+create policy "report evidence moderator manage"
+  on public.matchup_report_evidence for all to authenticated
+  using ((auth.jwt() -> 'app_metadata' ->> 'omnivex_role') in ('moderator','admin'))
+  with check ((auth.jwt() -> 'app_metadata' ->> 'omnivex_role') in ('moderator','admin'));
