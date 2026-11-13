@@ -1156,9 +1156,11 @@ export function SourceDetailPage() {
     if (!user || !supabase) { setAiConfigured(null); return () => { active = false; }; }
     supabase.functions.invoke("omnivex-research", { body: { action: "ai_status" } })
       .then(({ data, error }) => {
-        if (active) setAiConfigured(!error && data?.configured === true);
+        if (!active) return;
+        if (error || typeof data?.configured !== "boolean") setAiConfigured(null);
+        else setAiConfigured(data.configured);
       })
-      .catch(() => { if (active) setAiConfigured(false); });
+      .catch(() => { if (active) setAiConfigured(null); });
     return () => { active = false; };
   }, [user?.id]);
 
