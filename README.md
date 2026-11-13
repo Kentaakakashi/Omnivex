@@ -30,17 +30,33 @@ The production build verifies compilation and bundling only. Browser interaction
 
 Pages load records from Supabase rather than filling empty catalogues with invented entities, scores or discussions. Until the Supabase publishable key is added and the schema has been applied, database-backed pages will not display live data.
 
-## Supabase setup
+## Supabase and research engine
 
-The project URL is configured as:
+The live Supabase project URL is:
 
 `https://brbeqauwzvuruvjdjnud.supabase.co`
 
-Add these environment variables to the deployment:
-- `VITE_SUPABASE_URL` — the project URL above.
-- `VITE_SUPABASE_PUBLISHABLE_KEY` — the project's publishable key from Supabase Settings → API Keys.
+The frontend reads:
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_PUBLISHABLE_KEY`
 
-Never put a `service_role` key or Supabase secret key in a `VITE_` variable or any browser bundle. The base schema is in [supabase/schema.sql](./supabase/schema.sql). The additive artwork-provenance migration is [supabase/migrations/20261113_entity_media_provenance.sql](./supabase/migrations/20261113_entity_media_provenance.sql). Both still need to be applied to the intended Supabase project and checked with RLS/security advisors; remote installation has not been confirmed from this repository workflow.
+Never put a `service_role` key or Supabase secret key in a `VITE_` variable or browser bundle. The baseline schema is in [supabase/schema.sql](./supabase/schema.sql), and deployed migrations are tracked in [supabase/migrations](./supabase/migrations).
+
+The live database has Row Level Security enabled across its public tables. The security advisor returned no findings after the entity-source-link addition. Performance advisor notices remain for unindexed foreign keys elsewhere in the existing schema and are optimization work, not security failures.
+
+### Online discovery
+
+The deployed `omnivex-research` Supabase Edge Function searches public discovery/catalogue endpoints:
+- Wikidata and Wikipedia for broad identity/reference discovery.
+- Jikan / MyAnimeList for anime character catalogue discovery.
+- Crossref for scholarly metadata.
+- Open Library for book and publication catalogue metadata.
+
+Search leads do not automatically become facts. Entity imports are provisional, continuity placeholders remain unresolved until reviewed, and saved references are submitted source records. The function does not yet generate verified feats or matchup verdicts.
+
+The initial live index contains 10 universe hubs and 12 starter character dossiers with linked official/publisher reference records. Character pages live inside OMNIVEX at `/character/:slug`; source links are secondary citations opened separately, not the destination for a character result.
+
+Netlify must have the two frontend environment variables above and a successful deploy before the public website is considered live.
 
 ## Stack
 
