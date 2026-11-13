@@ -11,7 +11,7 @@ function HomeRecord({ record, type }) {
     ["public_domain", "cc0", "cc_by", "cc_by_sa", "licensed", "publisher_authorized", "user_owned"].includes(record.artwork_use_basis)
   );
   return (
-    <Link className="home-record" to={type === "entity" ? "/entity/" + record.slug : type === "universe" ? "/universe/" + record.slug : "/matchups/" + record.slug}>
+    <Link className="home-record" to={type === "entity" ? (String(record.entity_type || "").toLowerCase().includes("character") ? "/character/" + record.slug : "/entity/" + record.slug) : type === "universe" ? "/universe/" + record.slug : "/matchups/" + record.slug}>
       <div className="home-record__art">
         {canShowArtwork ? <img src={record.artwork_url} alt={title} loading="lazy" referrerPolicy="no-referrer"/> : <span>{title.slice(0,2).toUpperCase()}</span>}
       </div>
