@@ -78,11 +78,13 @@ Gemini URL Context is limited to approved public source hosts and at most 20 URL
 
 The first report-generation workflow is wired to matchup pages. It loads only moderator-verified evidence and verified capability records for the exact participant versions. It stores reproducible, unverified report snapshots and links each citation back to the existing evidence record. If either side lacks verified evidence, the result is explicitly inconclusive. Non-fictional subjects are not given simulated fight outcomes. The analysis is high-level and non-graphic; weapon handling, attack techniques, injury methods and tactical sequences are excluded.
 
-Reports remain `unverified` until a moderator reviews their versions, evidence IDs, source references, uncertainty and reasoning. The report is a research prediction, not a canon-confirmed result.
+Each report also carries an independent deterministic citation audit. The audit checks that cited IDs belong to the matchup's verified evidence set, structured comparisons carry valid evidence links, and a predicted result cites both sides. A failed audit downgrades the result to inconclusive or marks the audit as needing review. It is not a semantic fact-check and does not approve the report.
+
+Reports remain `unverified` until an authorized moderator reviews their versions, evidence IDs, source references, uncertainty and reasoning. The Research review queue includes stored matchup reports and records the moderator, review time and review note. The report is a research prediction, not a canon-confirmed result.
 
 ### Human review
 
-The Research workspace has a moderator-only queue for source records, evidence claims, capability records and evidence relationships. Moderator authorization comes from trusted Supabase `app_metadata.omnivex_role` values (`moderator` or `admin`), not editable profile metadata. Moderators can verify, dispute or reject submissions. Regular members can submit material but cannot approve it.
+The Research workspace has a moderator-only queue for source records, evidence claims, capability records, evidence relationships and matchup reports. Moderator authorization comes from trusted Supabase `app_metadata.omnivex_role` values (`moderator` or `admin`), not editable profile metadata. Moderators can verify, dispute or reject submissions. Regular members can submit material but cannot approve it.
 
 ### Current catalogue
 
