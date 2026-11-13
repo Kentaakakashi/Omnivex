@@ -66,6 +66,7 @@ create table if not exists public.entity_versions (
   canon_status text not null default 'canon' check (canon_status in ('canon','alternate','non_canon','composite','unknown')),
   version_notes text,
   is_composite boolean not null default false,
+  is_primary_version boolean not null default false,
   status text not null default 'provisional' check (status in ('provisional','submitted','verified','disputed','archived')),
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
@@ -382,6 +383,8 @@ create table if not exists public.moderation_actions (
 create index if not exists entities_name_search_idx on public.entities using gin (to_tsvector('simple', coalesce(name,'')));
 create index if not exists entities_universe_idx on public.entities(primary_universe_id);
 create index if not exists entity_versions_entity_idx on public.entity_versions(entity_id);
+create unique index if not exists entity_versions_one_primary_idx
+  on public.entity_versions(entity_id) where is_primary_version = true;
 create index if not exists entity_media_version_idx on public.entity_media(entity_version_id, approval_status, is_primary);
 create unique index if not exists entity_media_one_approved_primary_idx
   on public.entity_media(entity_version_id)
