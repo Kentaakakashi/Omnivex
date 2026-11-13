@@ -2,6 +2,11 @@
 -- Apply this after supabase/schema.sql in the intended Supabase project.
 -- An image remains private to review until a moderator marks it approved.
 
+alter table public.entity_versions
+  add column if not exists is_primary_version boolean not null default false;
+create unique index if not exists entity_versions_one_primary_idx
+  on public.entity_versions(entity_id) where is_primary_version = true;
+
 create table if not exists public.entity_media (
   id uuid primary key default gen_random_uuid(),
   entity_version_id uuid not null references public.entity_versions(id) on delete cascade,
