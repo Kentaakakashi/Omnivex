@@ -288,7 +288,7 @@ export function ExplorePage() {
               </div>
               {filteredEntities.length ? (
                 <div className="platform-card-grid">
-                  {filteredEntities.map(item => <RecordCard key={item.id} record={{ ...item, ...(mediaByEntity[item.id] || {}) }} type={(item.entity_type || "ENTITY").toUpperCase()} to={"/entity/" + item.slug} />)}
+                  {filteredEntities.map(item => <RecordCard key={item.id} record={{ ...item, ...(mediaByEntity[item.id] || {}) }} type={(item.entity_type || "ENTITY").toUpperCase()} to={String(item.entity_type || "").toLowerCase().includes("character") ? "/character/" + item.slug : "/entity/" + item.slug} />)}
                 </div>
               ) : <EmptyState title={entities.length ? "No records match those filters" : "The index is waiting for its first records"} body={entities.length ? "Try another search term or select Everything." : "The catalogue will populate when real entity and version records are added. The preview does not invent character profiles."} />}
             </section>
@@ -455,7 +455,7 @@ export function UniverseHubPage() {
       {universe ? (
         <>
           <div className="platform-meta-row"><MetaPill>{universe.category}</MetaPill><MetaPill>{universe.status}</MetaPill><MetaPill>{entities.length} LINKED ENTITIES</MetaPill></div>
-          <section className="platform-section"><div className="platform-section-heading"><div><span className="section-kicker">INDEXED IDENTITIES</span><h2>People, teams & beings</h2></div></div>{entities.length ? <div className="platform-card-grid">{entities.map(item => <RecordCard key={item.id} record={item} type={(item.entity_type || "ENTITY").toUpperCase()} to={"/entity/" + item.slug} />)}</div> : <EmptyState title="No entities linked yet" body="Entity records appear here after their primary universe relationship is recorded." />}</section>
+          <section className="platform-section"><div className="platform-section-heading"><div><span className="section-kicker">INDEXED IDENTITIES</span><h2>People, teams & beings</h2></div></div>{entities.length ? <div className="platform-card-grid">{entities.map(item => <RecordCard key={item.id} record={item} type={(item.entity_type || "ENTITY").toUpperCase()} to={String(item.entity_type || "").toLowerCase().includes("character") ? "/character/" + item.slug : "/entity/" + item.slug} />)}</div> : <EmptyState title="No entities linked yet" body="Entity records appear here after their primary universe relationship is recorded." />}</section>
         </>
       ) : !error ? <EmptyState title="Universe not found" body="This route does not resolve to a published universe record." /> : null}
     </div>
@@ -720,7 +720,7 @@ export function ResearchPage() {
       });
       if (invokeError) throw new Error(invokeError.message || "Could not import entity.");
       if (data?.error) throw new Error(data.error);
-      setImportedKeys(old => ({ ...old, [candidate.key]: data.entity?.slug || true }));
+      setImportedKeys(old => ({ ...old, [candidate.key]: { slug: data.entity?.slug, type: data.entity?.entity_type } }));
       refreshSources();
       showToast(data.alreadyIndexed ? "Entity already exists in the index." : "Provisional entity added to OMNIVEX.");
     } catch (error) {
@@ -769,9 +769,15 @@ export function ResearchPage() {
                           <p>{candidate.description || "No description supplied by the reference provider."}</p>
                           <a href={candidate.url} target="_blank" rel="noreferrer">Open reference <ArrowUpRight size={13} /></a>
                         </span>
-                        <button className="atlas-button atlas-button--outline" type="button" disabled={Boolean(importedKeys[candidate.key]) || importingKey === candidate.key} onClick={() => importCandidate(candidate)}>
-                          {importedKeys[candidate.key] ? "Added to index" : importingKey === candidate.key ? "Adding…" : "Import identity"}
-                        </button>
+                        {importedKeys[candidate.key]?.slug ? (
+                          <Link className="atlas-button atlas-button--dark" to={(importedKeys[candidate.key].type || "").toLowerCase().includes("character") ? "/character/" + importedKeys[candidate.key].slug : "/entity/" + importedKeys[candidate.key].slug}>
+                            Open OMNIVEX profile <ArrowUpRight size={14}/>
+                          </Link>
+                        ) : (
+                          <button className="atlas-button atlas-button--outline" type="button" disabled={importingKey === candidate.key} onClick={() => importCandidate(candidate)}>
+                            {importingKey === candidate.key ? "Adding…" : "Add to OMNIVEX"}
+                          </button>
+                        )}
                       </article>
                     ))}
                   </div>
