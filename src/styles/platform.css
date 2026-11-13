@@ -438,3 +438,19 @@
   .research-ai-actions > button { width:100%; }
   .research-ai-result { padding:14px; }
 }
+
+
+/* Moderator review desk and independent report audit */
+.research-review-actions { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:6px; flex:0 0 auto; }
+.research-review-actions .atlas-button { min-height:34px; padding:0 10px; font-size:8px; }
+.platform-report-audit { margin:17px 0 6px; padding:17px 18px; border:1px solid var(--line); background:rgba(228,236,236,.62); }
+.platform-report-audit > div { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.platform-report-audit > div strong { color:var(--petrol); font:700 8px var(--mono); text-transform:uppercase; letter-spacing:.08em; }
+.platform-report-audit > p { margin:9px 0; color:#6A7F85; font-size:9px; line-height:1.7; }
+.platform-report-audit > ul { margin:8px 0; padding-left:17px; color:#8A5548; font-size:9px; line-height:1.7; }
+.platform-report-audit > small { display:block; margin-top:8px; color:#87969A; font:7px var(--mono); letter-spacing:.05em; text-transform:uppercase; }
+@media (max-width:760px) {
+  .research-review-actions { flex:1 1 100%; justify-content:flex-start; }
+  .research-review-actions .atlas-button { flex:1 1 auto; }
+  .platform-report-audit { padding:13px; }
+}
