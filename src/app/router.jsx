@@ -1,20 +1,43 @@
 import React from "react";
-import { BrowserRouter, Route, Routes } from "react-router";
+import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router";
 import AppShell from "./layouts/AppShell.jsx";
 import HomePage from "../features/home/HomePage.jsx";
 import AuthPage from "./pages/AuthPage.jsx";
 import { AuthProvider } from "./providers/AuthProvider.jsx";
-import { PlaceholderPage } from "./pages/PlaceholderPage.jsx";
 import { ToastProvider } from "./providers/ToastProvider.jsx";
 import {
-  DiscoverPage, CharactersPage, UniversesPage, UniverseHubPage,
-  EntityDossierPage, MatchupCreatePage, MatchupDetailPage,
-  EvidenceExplorerPage, EvidenceDetailPage, RankingsPage,
-  CommunityPage, PersonalOverviewPage, LibraryPage, ResearchNotebookPage
-} from "../features/FeaturePages.jsx";
+  CommunityPage,
+  DiscussionDetailPage,
+  EntityDossierPage,
+  EventDetailPage,
+  EvidenceDetailPage,
+  ExplorePage,
+  LibraryNotePage,
+  LibraryPage,
+  MatchupCreatePage,
+  MatchupDetailPage,
+  MatchupsPage,
+  ProfilePage,
+  RankingsPage,
+  ResearchPage,
+  UniverseHubPage
+} from "../features/platform/PlatformPages.jsx";
 
-function Page({ title, eyebrow, description }) {
-  return <PlaceholderPage title={title} eyebrow={eyebrow} description={description} />;
+function LegacyEntityRedirect() {
+  const { entitySlug } = useParams();
+  return <Navigate to={"/entity/" + entitySlug} replace />;
+}
+function LegacyUniverseRedirect() {
+  const { universeSlug } = useParams();
+  return <Navigate to={"/universe/" + universeSlug} replace />;
+}
+function LegacyEvidenceRedirect() {
+  const { evidenceSlug } = useParams();
+  return <Navigate to={"/research/evidence/" + evidenceSlug} replace />;
+}
+function LegacyMemberRedirect() {
+  const { username } = useParams();
+  return <Navigate to={"/profile/" + username} replace />;
 }
 
 export function AppRouter() {
@@ -23,30 +46,50 @@ export function AppRouter() {
       <AuthProvider>
         <ToastProvider>
           <Routes>
-            <Route element={<AppShell />}>
-              <Route index element={<HomePage />} />
-              <Route path="discover" element={<DiscoverPage />} />
-              <Route path="characters" element={<CharactersPage />} />
-              <Route path="characters/:entitySlug" element={<EntityDossierPage />} />
-              <Route path="characters/:entitySlug/versions/:versionSlug" element={<EntityDossierPage />} />
-              <Route path="entities/:entitySlug" element={<EntityDossierPage />} />
-              <Route path="universes" element={<UniversesPage />} />
-              <Route path="universes/:universeSlug" element={<UniverseHubPage />} />
-              <Route path="matchups/create" element={<MatchupCreatePage />} />
-              <Route path="matchups/:matchupSlug" element={<MatchupDetailPage />} />
-              <Route path="evidence" element={<EvidenceExplorerPage />} />
-              <Route path="evidence/:evidenceSlug" element={<EvidenceDetailPage />} />
-              <Route path="rankings" element={<RankingsPage />} />
-              <Route path="community" element={<CommunityPage />} />
-              <Route path="discussions/:discussionSlug" element={<Page />} />
-              <Route path="events/:eventSlug" element={<Page />} />
-              <Route path="members/:username" element={<Page />} />
-              <Route path="me" element={<PersonalOverviewPage />} />
-              <Route path="me/library" element={<LibraryPage />} />
-              <Route path="me/research" element={<ResearchNotebookPage />} />
-              <Route path="auth/sign-in" element={<AuthPage />} />
-              <Route path="auth/callback" element={<Page title="Sign-in callback" eyebrow="AUTHENTICATION" description="Your Supabase authentication redirect is being resolved." />} />
-              <Route path="*" element={<Page title="This page isn't in the atlas." eyebrow="404 / NOT FOUND" description="The address does not match a published OMNIVEX route. Use the navigation to return to an active destination." />} />
+            <Route element={<AppShell/>}>
+              <Route index element={<HomePage/>}/>
+
+              <Route path="explore" element={<ExplorePage/>}/>
+              <Route path="entity/:entitySlug" element={<EntityDossierPage/>}/>
+              <Route path="entity/:entitySlug/versions/:versionSlug" element={<EntityDossierPage/>}/>
+              <Route path="universe/:universeSlug" element={<UniverseHubPage/>}/>
+
+              <Route path="matchups" element={<MatchupsPage/>}/>
+              <Route path="matchups/new" element={<MatchupCreatePage/>}/>
+              <Route path="matchups/:matchupSlug" element={<MatchupDetailPage/>}/>
+
+              <Route path="research" element={<ResearchPage/>}/>
+              <Route path="research/evidence/:evidenceSlug" element={<EvidenceDetailPage/>}/>
+
+              <Route path="community" element={<CommunityPage/>}/>
+              <Route path="discussions/:discussionId" element={<DiscussionDetailPage/>}/>
+              <Route path="events/:eventSlug" element={<EventDetailPage/>}/>
+
+              <Route path="rankings" element={<RankingsPage/>}/>
+              <Route path="library" element={<LibraryPage/>}/>
+              <Route path="library/notes/new" element={<LibraryNotePage/>}/>
+              <Route path="library/notes/:noteId" element={<LibraryNotePage/>}/>
+              <Route path="profile/me" element={<ProfilePage/>}/>
+              <Route path="profile/:username" element={<ProfilePage/>}/>
+              <Route path="auth/sign-in" element={<AuthPage/>}/>
+
+              {/* Legacy URLs stay useful while old links and bookmarks transition. */}
+              <Route path="discover" element={<Navigate to="/explore" replace/>}/>
+              <Route path="characters" element={<Navigate to="/explore?tab=characters" replace/>}/>
+              <Route path="characters/:entitySlug" element={<LegacyEntityRedirect/>}/>
+              <Route path="characters/:entitySlug/versions/:versionSlug" element={<LegacyEntityRedirect/>}/>
+              <Route path="entities/:entitySlug" element={<LegacyEntityRedirect/>}/>
+              <Route path="universes" element={<Navigate to="/explore?tab=universes" replace/>}/>
+              <Route path="universes/:universeSlug" element={<LegacyUniverseRedirect/>}/>
+              <Route path="matchups/create" element={<Navigate to="/matchups/new" replace/>}/>
+              <Route path="evidence" element={<Navigate to="/research" replace/>}/>
+              <Route path="evidence/:evidenceSlug" element={<LegacyEvidenceRedirect/>}/>
+              <Route path="members/:username" element={<LegacyMemberRedirect/>}/>
+              <Route path="me" element={<Navigate to="/profile/me" replace/>}/>
+              <Route path="me/library" element={<Navigate to="/library" replace/>}/>
+              <Route path="me/research" element={<Navigate to="/library?tab=notes" replace/>}/>
+
+              <Route path="*" element={<section className="atlas-feature-page platform-page"><span className="section-kicker">404 / NOT FOUND</span><h1>This path isn't in the atlas.</h1><p>Return to the universal index and continue exploring.</p><a className="atlas-button atlas-button--dark" href="/explore">Open Explore</a></section>}/>
             </Route>
           </Routes>
         </ToastProvider>
