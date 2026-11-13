@@ -800,7 +800,13 @@ export function ResearchPage() {
     if (item.kind === "evidence" || item.kind === "relation" || item.kind === "report") {
       patch.reviewed_by = user.id;
       patch.reviewed_at = new Date().toISOString();
-      patch.review_notes = nextStatus === "verified" || nextStatus === "passed" ? "Reviewed by an authorized OMNIVEX moderator." : "Marked " + nextStatus + " by an authorized OMNIVEX moderator.";
+    }
+    if (item.kind === "report") {
+      patch.review_notes = nextStatus === "passed"
+        ? "Approved by an authorized OMNIVEX moderator."
+        : nextStatus === "rejected"
+          ? "Rejected by an authorized OMNIVEX moderator."
+          : "Returned for additional review by an authorized OMNIVEX moderator.";
     }
     const { error: updateError } = await supabase.from(table).update(patch).eq("id", item.id);
     if (updateError) showToast({ title:"Review action failed", description:updateError.message });
