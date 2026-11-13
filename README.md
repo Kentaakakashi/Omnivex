@@ -54,7 +54,7 @@ The deployed `omnivex-research` Supabase Edge Function searches public discovery
 
 Search leads do not automatically become facts. Entity imports are provisional, continuity placeholders remain unresolved until reviewed, and saved references are submitted source records. The function does not yet generate verified feats or matchup verdicts.
 
-The initial live index contains 10 universe hubs and 12 starter character dossiers with linked official/publisher reference records. Character pages live inside OMNIVEX at `/character/:slug`; source links are secondary citations opened separately, not the destination for a character result.
+The initial live index contains 10 universe hubs and 12 starter character dossiers with linked official/publisher reference records. Character pages live inside OMNIVEX at `/character/:slug`. Saved sources open internal `/research/source/:id` records; the publisher's original page is an optional secondary citation. Discovered identity results link to OMNIVEX dossiers after import.
 
 Netlify must have the two frontend environment variables above and a successful deploy before the public website is considered live.
 
