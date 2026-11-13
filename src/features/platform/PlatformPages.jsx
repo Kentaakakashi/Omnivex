@@ -430,6 +430,7 @@ export function UniverseHubPage() {
   const { universeSlug } = useParams();
   const [universe, setUniverse] = useState(null);
   const [entities, setEntities] = useState([]);
+  const [sourceWorks, setSourceWorks] = useState([]);
   const [error, setError] = useState("");
   useEffect(() => {
     let active = true;
@@ -440,10 +441,14 @@ export function UniverseHubPage() {
       if (queryError) { setError(queryError.message); return; }
       setUniverse(data);
       if (data) {
-        const { data: linked, error: linkedError } = await supabase.from("entities").select("*").eq("primary_universe_id", data.id).order("name").limit(120);
+        const [entityResult, workResult] = await Promise.all([
+          supabase.from("entities").select("*").eq("primary_universe_id", data.id).order("name").limit(120),
+          supabase.from("source_works").select("*").eq("universe_id", data.id).order("title")
+        ]);
         if (!active) return;
-        if (linkedError) setError(linkedError.message);
-        else setEntities(linked || []);
+        if (entityResult.error || workResult.error) setError(entityResult.error?.message || workResult.error?.message || "");
+        setEntities(entityResult.data || []);
+        setSourceWorks(workResult.data || []);
       }
     })();
     return () => { active = false; };
@@ -456,6 +461,10 @@ export function UniverseHubPage() {
         <>
           <div className="platform-meta-row"><MetaPill>{universe.category}</MetaPill><MetaPill>{universe.status}</MetaPill><MetaPill>{entities.length} LINKED ENTITIES</MetaPill></div>
           <section className="platform-section"><div className="platform-section-heading"><div><span className="section-kicker">INDEXED IDENTITIES</span><h2>People, teams & beings</h2></div></div>{entities.length ? <div className="platform-card-grid">{entities.map(item => <RecordCard key={item.id} record={item} type={(item.entity_type || "ENTITY").toUpperCase()} to={String(item.entity_type || "").toLowerCase().includes("character") ? "/character/" + item.slug : "/entity/" + item.slug} />)}</div> : <EmptyState title="No entities linked yet" body="Entity records appear here after their primary universe relationship is recorded." />}</section>
+          <section className="platform-section">
+            <div className="platform-section-heading"><div><span className="section-kicker">SOURCE WORKS & CATALOGUES</span><h2>Start with the originals.</h2></div><span>{sourceWorks.length} REFERENCES</span></div>
+            {sourceWorks.length ? <div className="platform-list">{sourceWorks.map(work => <article className="platform-list-row platform-list-row--static" key={work.id}><span><strong>{work.title}</strong><small>{work.publisher || work.medium || "SOURCE REFERENCE"} · {work.canon_label || "UNCLASSIFIED"}</small><p>{work.notes || "A starting point for source discovery. This is not a verified feat record."}</p></span>{work.source_url && <a href={work.source_url} target="_blank" rel="noreferrer" aria-label={"Open " + work.title}><ArrowUpRight size={16}/></a>}</article>)}</div> : <EmptyState title="No source works linked" body="Original publications and official reference catalogues will appear here as they are connected to this universe."/>}
+          </section>
         </>
       ) : !error ? <EmptyState title="Universe not found" body="This route does not resolve to a published universe record." /> : null}
     </div>
