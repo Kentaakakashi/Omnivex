@@ -785,7 +785,7 @@ export function ResearchPage() {
                           <small>{candidate.provider} · {candidate.providerId}</small>
                           <strong>{candidate.name}</strong>
                           <p>{candidate.description || "No description supplied by the reference provider."}</p>
-                          <a href={candidate.url} target="_blank" rel="noreferrer">Open reference <ArrowUpRight size={13} /></a>
+                          <small className="research-source-hint">Reference details are attached to the OMNIVEX dossier after import.</small>
                         </span>
                         {importedKeys[candidate.key]?.slug ? (
                           <Link className="atlas-button atlas-button--dark" to={(importedKeys[candidate.key].type || "").toLowerCase().includes("character") ? "/character/" + importedKeys[candidate.key].slug : "/entity/" + importedKeys[candidate.key].slug}>
