@@ -8,17 +8,25 @@ OMNIVEX is a universal comparison, research, evidence, discovery, rankings and c
 
 The `main` branch now contains the Multiverse Field Atlas implementation. The earlier `field-atlas-redesign` branch is preserved at the same prior commit as a recovery point.
 
-The application currently includes:
-- React 19 + Vite 8 with React Router 8 and a responsive shared navigation shell.
-- The editorial Field Atlas homepage.
-- Routed discovery, entity directory, universe hubs, entity dossiers, matchup setup and report pages, evidence explorer/detail, rankings, community, personal space, saved library and private research notebook.
-- Supabase browser client and email/password auth integration, configured through environment variables.
-- A Supabase database schema with entity/version, source/evidence, capability/feat, matchup/report, debate/reaction, follow/save, note, notification, event, ranking and moderation structures.
-- All 25 React Bits components integrated in their assigned locations. See [the implementation tracker](./docs/REACT-BITS-INTEGRATION-TRACKER.md).
+The active frontend is being rebuilt feature-first around the agreed product structure:
+- Home (/) — live catalogue summaries, recent universes/entities and published matchup configurations.
+- Explore (/explore) — merged entity + universe index with category filters, sorting and alias-aware search.
+- Entity dossiers (/entity/:slug) and universe hubs (/universe/:slug) — version-aware identity, capabilities, evidence and sources.
+- Matchups (/matchups) — browse configurations, create comparisons using exact versions and inspect stored reports.
+- Research (/research) — evidence explorer, source library and review queue.
+- Community (/community) — feed, debates, events and members, plus discussion/event detail pages.
+- Rankings (/rankings) — distinct ranking types and periods resolved to indexed subjects.
+- Library (/library) — saved items and private editable research notes.
+- Profiles (/profile/:username) — public member pages and self-editable username, display name and bio.
+- Responsive shared shell with universal Explore search, Library and Profile access.
+- Supabase browser client and email/password auth integration.
+- Version-specific media provenance and approval migration for actual character artwork.
+
+React Bits source copies are retained in the repository, but their placement in the feature-first UI is intentionally paused until feature UX is stable. They are not considered active page integrations right now; see the revised tracker.
 
 ## Build vs. runtime status
 
-The production build verifies compilation and bundling only. Browser interaction, visual desktop/mobile QA, authenticated database operations and Netlify deployment must be tested separately. All React Bits entries are currently marked **INTEGRATED**; their interaction and desktop/mobile acceptance tests remain **NOT VERIFIED**.
+The production build verifies compilation and bundling only. Browser interaction, visual desktop/mobile QA, authenticated database operations and Netlify deployment must be tested separately. A successful GitHub Actions production build was confirmed for commit 3bee866; later commits need their own build verification. React Bits placement is deferred and is not claimed as integrated into the new frontend.
 
 Pages load records from Supabase rather than filling empty catalogues with invented entities, scores or discussions. Until the Supabase publishable key is added and the schema has been applied, database-backed pages will not display live data.
 
@@ -32,7 +40,7 @@ Add these environment variables to the deployment:
 - `VITE_SUPABASE_URL` — the project URL above.
 - `VITE_SUPABASE_PUBLISHABLE_KEY` — the project's publishable key from Supabase Settings → API Keys.
 
-Never put a `service_role` key or Supabase secret key in a `VITE_` variable or any browser bundle. The schema is in [supabase/schema.sql](./supabase/schema.sql). It still needs to be applied to the intended Supabase project and checked with RLS/security advisors; remote installation has not been confirmed from this repository workflow.
+Never put a `service_role` key or Supabase secret key in a `VITE_` variable or any browser bundle. The base schema is in [supabase/schema.sql](./supabase/schema.sql). The additive artwork-provenance migration is [supabase/migrations/20261113_entity_media_provenance.sql](./supabase/migrations/20261113_entity_media_provenance.sql). Both still need to be applied to the intended Supabase project and checked with RLS/security advisors; remote installation has not been confirmed from this repository workflow.
 
 ## Stack
 
