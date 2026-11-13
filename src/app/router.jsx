@@ -24,8 +24,11 @@ import {
 } from "../features/platform/PlatformPages.jsx";
 
 function LegacyEntityRedirect() {
-  const { entitySlug } = useParams();
-  return <Navigate to={"/entity/" + entitySlug} replace />;
+  const { entitySlug, versionSlug } = useParams();
+  const destination = versionSlug
+    ? "/entity/" + entitySlug + "/versions/" + versionSlug
+    : "/entity/" + entitySlug;
+  return <Navigate to={destination} replace />;
 }
 function LegacyUniverseRedirect() {
   const { universeSlug } = useParams();
@@ -72,6 +75,7 @@ export function AppRouter() {
               <Route path="profile/me" element={<ProfilePage/>}/>
               <Route path="profile/:username" element={<ProfilePage/>}/>
               <Route path="auth/sign-in" element={<AuthPage/>}/>
+              <Route path="auth/callback" element={<AuthPage/>}/>
 
               {/* Legacy URLs stay useful while old links and bookmarks transition. */}
               <Route path="discover" element={<Navigate to="/explore" replace/>}/>
