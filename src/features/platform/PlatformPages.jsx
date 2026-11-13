@@ -542,9 +542,13 @@ export function MatchupCreatePage() {
 
 export function MatchupDetailPage() {
   const { matchupSlug } = useParams();
+  const activeTab = useActiveTab("overview");
   const [matchup, setMatchup] = useState(null);
   const [participants, setParticipants] = useState([]);
   const [report, setReport] = useState(null);
+  const [reportHistory, setReportHistory] = useState([]);
+  const [evidence, setEvidence] = useState([]);
+  const [discussions, setDiscussions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -556,20 +560,37 @@ export function MatchupDetailPage() {
       if (matchupError) { setError(matchupError.message); setLoading(false); return; }
       setMatchup(data);
       if (!data) { setLoading(false); return; }
-      const [participantResult, reportResult] = await Promise.all([
+      const [participantResult, reportResult, discussionResult] = await Promise.all([
         supabase.from("matchup_participants").select("*").eq("matchup_id", data.id).order("participant_order"),
-        supabase.from("matchup_reports").select("*").eq("matchup_id", data.id).order("report_version", { ascending: false }).limit(1).maybeSingle()
+        supabase.from("matchup_reports").select("*").eq("matchup_id", data.id).order("report_version", { ascending: false }).limit(30),
+        supabase.from("discussions").select("*").eq("matchup_id", data.id).order("created_at", { ascending: false })
       ]);
       if (!active) return;
-      const versionIds = (participantResult.data || []).map(item => item.entity_version_id);
+      const versions = participantResult.data || [];
+      const versionIds = versions.map(item => item.entity_version_id);
       const { data: versionRows } = versionIds.length ? await supabase.from("entity_versions").select("*").in("id", versionIds) : { data: [] };
       const entityIds = [...new Set((versionRows || []).map(item => item.entity_id))];
       const { data: entityRows } = entityIds.length ? await supabase.from("entities").select("*").in("id", entityIds) : { data: [] };
       const byEntity = new Map((entityRows || []).map(item => [item.id, item]));
       const byVersion = new Map((versionRows || []).map(item => [item.id, { ...item, entity: byEntity.get(item.entity_id) }]));
-      setParticipants((participantResult.data || []).map(item => ({ ...item, version: byVersion.get(item.entity_version_id) })));
-      setReport(reportResult.data || null);
-      if (participantResult.error || reportResult.error) setError(participantResult.error?.message || reportResult.error?.message || "");
+      setParticipants(versions.map(item => ({ ...item, version: byVersion.get(item.entity_version_id) })));
+      const history = reportResult.data || [];
+      setReportHistory(history);
+      setReport(history[0] || null);
+      setDiscussions(discussionResult.data || []);
+      if (history[0]) {
+        const { data: links } = await supabase.from("matchup_report_evidence")
+          .select("evidence_record_id,relevance_note").eq("report_id", history[0].id);
+        const ids = (links || []).map(item => item.evidence_record_id);
+        if (ids.length) {
+          const { data: evidenceRows } = await supabase.from("evidence_records").select("*").in("id", ids);
+          const byId = new Map((evidenceRows || []).map(item => [item.id, item]));
+          setEvidence((links || []).map(item => ({ ...byId.get(item.evidence_record_id), relevance_note: item.relevance_note })).filter(item => item.id));
+        } else setEvidence([]);
+      } else setEvidence([]);
+      if (participantResult.error || reportResult.error || discussionResult.error) {
+        setError(participantResult.error?.message || reportResult.error?.message || discussionResult.error?.message || "");
+      }
       setLoading(false);
     })().catch(queryError => { if (active) { setError(queryError.message || "Unable to load matchup."); setLoading(false); } });
     return () => { active = false; };
@@ -579,14 +600,53 @@ export function MatchupDetailPage() {
   const sideA = participants.filter(item => item.side === "side_a" || item.side === "A");
   const sideB = participants.filter(item => item.side === "side_b" || item.side === "B");
   const config = matchup.configuration || {};
+  const tabs = [
+    { value: "overview", label: "Overview" },
+    { value: "analysis", label: "Analysis" },
+    { value: "evidence", label: "Evidence" },
+    { value: "debate", label: "Debate" },
+    { value: "history", label: "History" }
+  ];
   return (
     <div className="atlas-feature-page platform-page">
       <PageIntro eyebrow="MATCHUP / REPRODUCIBLE CONFIGURATION" title={matchup.title} description={matchup.description || "This matchup record preserves the participants, rules and assumptions used for the comparison."} action={<Link className="atlas-text-link" to="/matchups"><ArrowLeft size={15} /> All matchups</Link>} />
       <DataNotice error={error} />
       <div className="platform-versus-panel"><div><span>SIDE A</span><h2>{sideA.map(item => item.version?.entity?.name || "Unknown entity").join(" + ") || "Participant missing"}</h2><small>{sideA.map(item => item.version?.label).filter(Boolean).join(" · ")}</small></div><b>VS</b><div><span>SIDE B</span><h2>{sideB.map(item => item.version?.entity?.name || "Unknown entity").join(" + ") || "Participant missing"}</h2><small>{sideB.map(item => item.version?.label).filter(Boolean).join(" · ")}</small></div></div>
-      <section className="platform-section"><div className="platform-section-heading"><div><span className="section-kicker">COMPARISON CONFIGURATION</span><h2>What was assumed?</h2></div><MetaPill>{matchup.status}</MetaPill></div><div className="platform-config-grid">{[["Ruleset", config.ruleset], ["Environment", config.environment], ["Starting distance", config.starting_distance], ["Victory condition", config.victory_condition], ["Preparation", config.preparation], ["Prior knowledge", config.prior_knowledge]].map(([label,value]) => <div key={label}><small>{label}</small><strong>{value || "Not specified"}</strong></div>)}</div>{config.notes && <p className="platform-config-notes">{config.notes}</p>}</section>
-      <section className="platform-section"><div className="platform-section-heading"><div><span className="section-kicker">BATTLE ENGINE / REPORT</span><h2>Analysis & verdict</h2></div></div>{report ? <div className="platform-report-card"><MetaPill>{report.verdict_type.replace(/_/g, " ")}</MetaPill><h3>{report.verdict_summary || "Report created without a summary."}</h3><p>{report.uncertainty_notes || "No uncertainty notes recorded."}</p><small>REPORT VERSION {report.report_version} · VERIFICATION {report.verification_status}</small></div> : <EmptyState title="No analysis report exists yet" body="This is a published matchup configuration, not a generated verdict. The Battle Engine will attach a report only after its analysis and verification pipeline completes." />}</section>
-      <div className="platform-inline-actions"><Link className="atlas-button atlas-button--dark" to={"/community?tab=debates&matchup=" + matchup.id}><MessageSquare size={15} /> Discuss matchup</Link><Link className="atlas-text-link" to="/research">Open Research <ArrowUpRight size={15} /></Link></div>
+      <div className="platform-matchup-meta"><MetaPill>{matchup.status}</MetaPill><MetaPill>{config.ruleset || "RULESET NOT SPECIFIED"}</MetaPill><MetaPill>{report ? "REPORT AVAILABLE" : "CONFIGURATION ONLY"}</MetaPill></div>
+      <TabBar tabs={tabs} active={activeTab} pathname={"/matchups/" + matchup.slug} />
+      {activeTab === "overview" && (
+        <section className="platform-section platform-matchup-tab">
+          <div className="platform-section-heading"><div><span className="section-kicker">COMPARISON CONFIGURATION</span><h2>What was assumed?</h2></div></div>
+          <div className="platform-config-grid">{[["Ruleset", config.ruleset], ["Environment", config.environment], ["Starting distance", config.starting_distance], ["Victory condition", config.victory_condition], ["Preparation", config.preparation], ["Prior knowledge", config.prior_knowledge]].map(([label,value]) => <div key={label}><small>{label}</small><strong>{value || "Not specified"}</strong></div>)}</div>
+          {config.notes && <p className="platform-config-notes">{config.notes}</p>}
+          <p className="platform-form-note">A matchup configuration records the assumptions. It is not itself a canon result or prediction.</p>
+        </section>
+      )}
+      {activeTab === "analysis" && (
+        <section className="platform-section platform-matchup-tab">
+          <div className="platform-section-heading"><div><span className="section-kicker">BATTLE ENGINE / REPORT</span><h2>Analysis & verdict</h2></div></div>
+          {report ? <div className="platform-report-card"><MetaPill>{report.verdict_type.replace(/_/g, " ")}</MetaPill><h3>{report.verdict_summary || "Report created without a summary."}</h3><p>{report.uncertainty_notes || "No uncertainty notes recorded."}</p><small>REPORT VERSION {report.report_version} · VERIFICATION {report.verification_status}</small></div> : <EmptyState title="No analysis report exists yet" body="This is a matchup configuration, not a generated verdict. The Battle Engine will attach a report only after its analysis and verification pipeline completes." />}
+        </section>
+      )}
+      {activeTab === "evidence" && (
+        <section className="platform-section platform-matchup-tab">
+          <div className="platform-section-heading"><div><span className="section-kicker">REPORT EVIDENCE</span><h2>Sources behind this analysis</h2></div><span>{evidence.length} LINKED RECORDS</span></div>
+          {evidence.length ? <div className="platform-list">{evidence.map(item => <Link className="platform-list-row" key={item.id} to={"/research/evidence/" + item.id}><span><strong>{item.summary}</strong><small>{item.evidence_type} · {item.review_status} · {item.reliability_grade || "UNRATED"}</small><p>{item.relevance_note || item.context || "No relevance note recorded."}</p></span><ArrowUpRight size={16}/></Link>)}</div> : <EmptyState title="No report evidence is linked" body="Evidence appears here only when a stored report explicitly links its supporting records. Browse the full research index separately." action={<Link className="atlas-text-link" to="/research">Open Research <ArrowUpRight size={14}/></Link>} />}
+        </section>
+      )}
+      {activeTab === "debate" && (
+        <section className="platform-section platform-matchup-tab">
+          <div className="platform-section-heading"><div><span className="section-kicker">COMMUNITY / MATCHUP DEBATE</span><h2>Arguments around this question</h2></div><span>{discussions.length} THREADS</span></div>
+          {discussions.length ? <div className="platform-discussion-list">{discussions.map(item => <article className="platform-discussion-card" key={item.id}><MetaPill>{item.status}</MetaPill><h2>{item.title}</h2><p>{item.body}</p><Link className="atlas-text-link" to={"/discussions/" + item.id}>Open thread <ArrowUpRight size={14}/></Link></article>)}</div> : <EmptyState title="No matchup debate yet" body="Threads linked to this matchup will appear here. General community discussions remain in the Community feed." action={<Link className="atlas-text-link" to="/community">Open Community <ArrowUpRight size={14}/></Link>} />}
+        </section>
+      )}
+      {activeTab === "history" && (
+        <section className="platform-section platform-matchup-tab">
+          <div className="platform-section-heading"><div><span className="section-kicker">VERDICT HISTORY</span><h2>Every stored report revision</h2></div><span>{reportHistory.length} REPORT VERSIONS</span></div>
+          {reportHistory.length ? <div className="platform-list">{reportHistory.map(item => <article className="platform-list-row platform-list-row--static" key={item.id}><span><strong>Report v{item.report_version} · {item.verdict_type.replace(/_/g, " ")}</strong><small>{new Date(item.created_at).toLocaleString()} · {item.verification_status}</small><p>{item.verdict_summary || "No report summary stored."} {item.uncertainty_notes || ""}</p></span></article>)}</div> : <EmptyState title="No verdict history" body="There are no stored analysis snapshots for this matchup yet." />}
+        </section>
+      )}
+      <div className="platform-inline-actions"><Link className="atlas-button atlas-button--dark" to={"/community?tab=debates&matchup=" + matchup.id}><MessageSquare size={15} /> Open Community</Link><Link className="atlas-text-link" to="/research">Open Research <ArrowUpRight size={15} /></Link></div>
     </div>
   );
 }
