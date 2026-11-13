@@ -5,7 +5,11 @@ import { supabase } from "../../lib/supabase.js";
 
 function HomeRecord({ record, type }) {
   const title = record.name || record.title || "Untitled record";
-  const canShowArtwork = Boolean(record.artwork_url && record.artwork_source_url && record.artwork_use_basis);
+  const canShowArtwork = Boolean(
+    record.artwork_url && record.artwork_source_url &&
+    record.artwork_approval_status === "approved" &&
+    ["public_domain", "cc0", "cc_by", "cc_by_sa", "licensed", "publisher_authorized", "user_owned"].includes(record.artwork_use_basis)
+  );
   return (
     <Link className="home-record" to={type === "entity" ? "/entity/" + record.slug : type === "universe" ? "/universe/" + record.slug : "/matchups/" + record.slug}>
       <div className="home-record__art">
@@ -32,9 +36,35 @@ function useHomeRecords() {
       supabase.from("entities").select("*").order("created_at", { ascending: false }).limit(4),
       supabase.from("universes").select("*").order("created_at", { ascending: false }).limit(4),
       supabase.from("matchups").select("*").eq("status", "published").order("created_at", { ascending: false }).limit(3)
-    ]).then(([entities, universes, matchups]) => {
+    ]).then(async ([entities, universes, matchups]) => {
       if (!active) return;
-      setData({ entities: entities.data || [], universes: universes.data || [], matchups: matchups.data || [] });
+      let entityRows = entities.data || [];
+      if (entityRows.length) {
+        const { data: versionRows } = await supabase.from("entity_versions")
+          .select("id,entity_id").in("entity_id", entityRows.map(item => item.id));
+        const versions = versionRows || [];
+        if (versions.length) {
+          const versionToEntity = new Map(versions.map(item => [item.id, item.entity_id]));
+          const { data: mediaRows } = await supabase.from("entity_media")
+            .select("entity_version_id,asset_url,source_url,usage_basis,approval_status,alt_text,is_primary")
+            .in("entity_version_id", versions.map(item => item.id))
+            .eq("approval_status", "approved").eq("is_primary", true);
+          const mediaByEntity = {};
+          (mediaRows || []).forEach(item => {
+            const entityId = versionToEntity.get(item.entity_version_id);
+            if (entityId && !mediaByEntity[entityId]) mediaByEntity[entityId] = {
+              artwork_url: item.asset_url,
+              artwork_source_url: item.source_url,
+              artwork_use_basis: item.usage_basis,
+              artwork_approval_status: item.approval_status,
+              artwork_alt_text: item.alt_text
+            };
+          });
+          entityRows = entityRows.map(item => ({ ...item, ...(mediaByEntity[item.id] || {}) }));
+        }
+      }
+      if (!active) return;
+      setData({ entities: entityRows, universes: universes.data || [], matchups: matchups.data || [] });
       setError(entities.error?.message || universes.error?.message || matchups.error?.message || "");
       setLoading(false);
     }).catch(queryError => {
