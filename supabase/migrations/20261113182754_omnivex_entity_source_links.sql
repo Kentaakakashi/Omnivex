@@ -14,6 +14,8 @@ create index if not exists entity_source_links_entity_idx
   on public.entity_source_links(entity_id, created_at desc);
 create index if not exists entity_source_links_source_idx
   on public.entity_source_links(source_record_id);
+create index if not exists entity_source_links_created_by_idx
+  on public.entity_source_links(created_by);
 
 alter table public.entity_source_links enable row level security;
 grant select on public.entity_source_links to anon, authenticated;
