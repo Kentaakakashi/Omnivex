@@ -40,9 +40,9 @@ The frontend reads:
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_PUBLISHABLE_KEY`
 
-Never put a `service_role` key or Supabase secret key in a `VITE_` variable or browser bundle. The baseline schema is in [supabase/schema.sql](./supabase/schema.sql), and deployed migrations are tracked in [supabase/migrations](./supabase/migrations).
+Never put a `service_role` key or Supabase secret key in a `VITE_` variable, a browser bundle, or a public GitHub commit. The baseline schema is in [supabase/schema.sql](./supabase/schema.sql), and deployed migrations are tracked in [supabase/migrations](./supabase/migrations).
 
-The live database has Row Level Security enabled across its public tables. The security advisor returned no findings after the entity-source-link addition. Performance advisor notices remain for unindexed foreign keys elsewhere in the existing schema and are optimization work, not security failures.
+The live database has Row Level Security enabled on its public tables. The security advisor returned no findings after the source-link and AI review migrations. Performance advisor notices remain for older foreign keys and repeated auth checks elsewhere in the existing schema.
 
 ### Online discovery
 
@@ -52,11 +52,43 @@ The deployed `omnivex-research` Supabase Edge Function searches public discovery
 - Crossref for scholarly metadata.
 - Open Library for book and publication catalogue metadata.
 
-Search leads do not automatically become facts. Entity imports are provisional, continuity placeholders remain unresolved until reviewed, and saved references are submitted source records. The function does not yet generate verified feats or matchup verdicts.
+Search leads do not automatically become facts. Entity imports are provisional, continuity placeholders remain unresolved until reviewed, and saved references are submitted source records. Character pages live inside OMNIVEX at `/character/:slug`. Saved sources open internal `/research/source/:id` records; the publisher's original page is an optional citation.
 
-The initial live index contains 10 universe hubs and 12 starter character dossiers with linked official/publisher reference records. Character pages live inside OMNIVEX at `/character/:slug`. Saved sources open internal `/research/source/:id` records; the publisher's original page is an optional secondary citation. Discovered identity results link to OMNIVEX dossiers after import.
+### AI evidence extraction and review
 
-Netlify must have the two frontend environment variables above and a successful deploy before the public website is considered live.
+The Edge Function can use Gemini URL Context to inspect an allowlisted public source URL, extract source-supported evidence and capability candidates, and suggest relationships to existing evidence. The source page exposes:
+- **Extract evidence & capabilities** — checks one linked source against one exact entity version.
+- **Scan for contradictions** — looks for contradictory, qualifying, supporting, contextual or superseding relationships within the same exact version.
+- **Relationships** — shows the submitted AI review leads.
+
+AI output is always inserted as `submitted`. It is never auto-verified and must not be treated as fact until an authorized reviewer checks it.
+
+To enable the Gemini stage, an owner/admin must add a production Edge Function secret in the Supabase Dashboard:
+
+1. Open the OMNIVEX Supabase project.
+2. Go to **Edge Functions → Secrets**.
+3. Add key `GEMINI_API_KEY` with the private API key as its value, then save.
+4. Optional: add `GEMINI_RESEARCH_MODEL` with value `gemini-3.6-flash` to pin the model.
+
+Supabase injects these production secrets into Edge Functions, where the code reads them with `Deno.env.get`. A secret change takes effect without redeploying the function. Do not send the key in chat, commit it to GitHub, or put it in a `VITE_` variable. See the [Supabase Edge Function secrets guide](https://supabase.com/docs/guides/functions/secrets).
+
+Gemini URL Context is limited to approved public source hosts and at most 20 URLs per request. It may be unable to read paywalled, blocked, inaccessible or unsupported pages. In those cases, the workflow returns an error or insufficient-source state; it must not invent a source claim. See [Google's URL Context documentation](https://ai.google.dev/gemini-api/docs/url-context).
+
+### Battle Engine
+
+The first report-generation workflow is wired to matchup pages. It loads only moderator-verified evidence and verified capability records for the exact participant versions. It stores reproducible, unverified report snapshots and links each citation back to the existing evidence record. If either side lacks verified evidence, the result is explicitly inconclusive. Non-fictional subjects are not given simulated fight outcomes. The analysis is high-level and non-graphic; weapon handling, attack techniques, injury methods and tactical sequences are excluded.
+
+Reports remain `unverified` until a moderator reviews their versions, evidence IDs, source references, uncertainty and reasoning. The report is a research prediction, not a canon-confirmed result.
+
+### Human review
+
+The Research workspace has a moderator-only queue for source records, evidence claims, capability records and evidence relationships. Moderator authorization comes from trusted Supabase `app_metadata.omnivex_role` values (`moderator` or `admin`), not editable profile metadata. Moderators can verify, dispute or reject submissions. Regular members can submit material but cannot approve it.
+
+### Current catalogue
+
+The initial live index contains 10 universe hubs and 12 starter character dossiers with linked official/publisher reference records. These are starting identity records, not completed biographies or verified feat databases. Artwork appears only with an approved usage basis and version-matched provenance; otherwise the site uses a neutral placeholder.
+
+Netlify must have the two frontend environment variables above and a successful deploy before the public website is considered live. GitHub Actions production builds verify compilation only; browser QA, authenticated AI calls and Netlify deployment must be checked separately.
 
 ## Stack
 
