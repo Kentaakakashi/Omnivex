@@ -670,6 +670,8 @@ export function MatchupDetailPage() {
 export function ResearchPage() {
   const { rows: evidence, loading: evidenceLoading, error: evidenceError } = useRows("evidence_records", "created_at", 240);
   const { rows: sources, loading: sourcesLoading, error: sourcesError, refresh: refreshSources } = useRows("source_records", "created_at", 200);
+  const { rows: relations, loading: relationsLoading, error: relationsError } = useRows("evidence_relations", "created_at", 240);
+  const [relationEvidence, setRelationEvidence] = useState({});
   const activeTab = useActiveTab("discover");
   const { user } = useAuth();
   const { showToast } = useToast();
@@ -686,7 +688,21 @@ export function ResearchPage() {
   const [importedKeys, setImportedKeys] = useState({});
   const filteredEvidence = evidence.filter(item => [item.summary, item.context, item.evidence_type, item.review_status].join(" ").toLowerCase().includes(query.toLowerCase()) && (review === "all" || item.review_status === review));
   const filteredSources = sources.filter(item => [item.title, item.publisher_or_host, item.locator, item.source_type].join(" ").toLowerCase().includes(query.toLowerCase()));
-  const tabs = [{ value: "discover", label: "Discover online" }, { value: "evidence", label: "Evidence" }, { value: "sources", label: "Source library" }, { value: "queue", label: "Review queue" }];
+  const filteredRelations = relations.filter(item => [item.relation_type, item.review_status, item.note].join(" ").toLowerCase().includes(query.toLowerCase()) && (review === "all" || item.review_status === review));
+  const tabs = [{ value: "discover", label: "Discover online" }, { value: "evidence", label: "Evidence" }, { value: "sources", label: "Source library" }, { value: "relations", label: "Relationships" }, { value: "queue", label: "Review queue" }];
+
+  useEffect(() => {
+    let active = true;
+    const ids = [...new Set(relations.flatMap(item => [item.from_evidence_id, item.to_evidence_id]).filter(Boolean))];
+    if (!supabase || !ids.length) { setRelationEvidence({}); return () => { active = false; }; }
+    supabase.from("evidence_records").select("id,summary").in("id", ids).then(({ data, error }) => {
+      if (!active || error) return;
+      const mapped = {};
+      (data || []).forEach(item => { mapped[item.id] = item.summary; });
+      setRelationEvidence(mapped);
+    });
+    return () => { active = false; };
+  }, [relations]);
 
   const searchOnline = async event => {
     event?.preventDefault();
@@ -831,12 +847,28 @@ export function ResearchPage() {
       ) : (
         <>
           <div className="platform-filter-row">
-            <label className="platform-search-field"><Search size={16} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={activeTab === "sources" ? "Search source title, publisher or locator…" : "Search evidence claims and context…"} /></label>
+            <label className="platform-search-field"><Search size={16} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={activeTab === "sources" ? "Search source title, publisher or locator…" : activeTab === "relations" ? "Search relationship type, review state or note…" : "Search evidence claims and context…"} /></label>
             {activeTab !== "sources" && <label className="platform-sort"><Filter size={15} /><select value={review} onChange={event => setReview(event.target.value)}><option value="all">All review states</option><option value="submitted">Submitted</option><option value="needs_review">Needs review</option><option value="verified">Verified</option><option value="disputed">Disputed</option><option value="rejected">Rejected</option><option value="outdated">Outdated</option></select></label>}
           </div>
-          <DataNotice error={evidenceError || sourcesError} />
+          <DataNotice error={evidenceError || sourcesError || relationsError} />
           {activeTab === "sources" ? (
             sourcesLoading ? <LoadingLine>Loading source library…</LoadingLine> : filteredSources.length ? <div className="platform-list">{filteredSources.map(item => <Link className="platform-list-row" key={item.id} to={"/research/source/" + item.id}><span><strong>{item.title}</strong><small>{item.publisher_or_host || item.source_type} · {item.reliability_grade || "NOT GRADED"} · {item.review_status}</small><p>{item.locator || item.source_notes || "Open the OMNIVEX source record and its linked entities."}</p></span><ArrowUpRight size={17} /></Link>)}</div> : <EmptyState title="No source records match" body="Sources are added as independent records and linked to evidence, not treated as evidence by themselves." />
+          ) : activeTab === "relations" ? (
+            relationsLoading ? <LoadingLine>Loading evidence relationships…</LoadingLine> : filteredRelations.length ? (
+              <>
+                <div className="platform-queue-note"><ShieldCheck size={17}/><span>AI-suggested links remain submitted review leads. A relationship marked “contradicts” is not a verified contradiction until a moderator reviews it.</span></div>
+                <div className="platform-list">{filteredRelations.map(item => (
+                  <article className="platform-list-row platform-list-row--static" key={item.id}>
+                    <span>
+                      <small>{String(item.relation_type || "relation").replace(/_/g," ")} · {item.review_status || "submitted"}</small>
+                      <strong>{relationEvidence[item.from_evidence_id] || "Evidence record"} ↔ {relationEvidence[item.to_evidence_id] || "Related evidence"}</strong>
+                      <p>{item.note || "No relationship note was provided."}</p>
+                    </span>
+                    <Link to={"/research/evidence/" + item.from_evidence_id} aria-label="Open linked evidence"><ArrowUpRight size={17}/></Link>
+                  </article>
+                ))}</div>
+              </>
+            ) : <EmptyState title="No relationship suggestions yet" body="Run the consistency scan from a source record after collecting at least two evidence records for the same exact version." />
           ) : evidenceLoading ? <LoadingLine>Loading evidence records…</LoadingLine> : (
             <>
               {activeTab === "queue" && <div className="platform-queue-note"><ShieldCheck size={17} /><span>Review queue shows submitted and disputed records. Only authorized moderators can change verification status.</span></div>}
