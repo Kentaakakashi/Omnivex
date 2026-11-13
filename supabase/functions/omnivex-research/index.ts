@@ -709,6 +709,7 @@ async function analyzeMatchup(client:any,user:any,matchupId:string) {
       const raw=Array.isArray(item?.evidence_ids)?item.evidence_ids:[];
       const linked=raw.filter((id:string)=>validIds.has(id));
       if(!linked.length){auditIssues.push(label+" includes an item without a valid verified evidence citation.");return [];}
+      if(raw.length!==linked.length)auditIssues.push(label+" includes one or more invalid evidence IDs.");
       return [{...item,evidence_ids:linked}];
     });
   };
