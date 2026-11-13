@@ -727,6 +727,8 @@ export function EvidenceDetailPage() {
 
 export function CommunityPage() {
   const activeTab = useActiveTab("feed");
+  const location = useLocation();
+  const matchupId = new URLSearchParams(location.search).get("matchup");
   const { rows: discussions, loading: discussionLoading, error: discussionError, refresh } = useRows("discussions", "created_at", 120);
   const { rows: events, loading: eventLoading, error: eventError } = useRows("events", "starts_at", 100);
   const { rows: members, loading: memberLoading, error: memberError } = useRows("profiles", "created_at", 120);
@@ -742,7 +744,7 @@ export function CommunityPage() {
     if (!user) { navigate("/auth/sign-in"); return; }
     if (!title.trim() || !body.trim()) return;
     setPosting(true);
-    const { error: postError } = await supabase.from("discussions").insert({ title: title.trim(), body: body.trim(), created_by: user.id });
+    const { error: postError } = await supabase.from("discussions").insert({ title: title.trim(), body: body.trim(), matchup_id: matchupId || null, created_by: user.id });
     if (postError) showToast({ title: "Discussion could not be published", description: postError.message });
     else { setTitle(""); setBody(""); showToast("Discussion published."); refresh(); }
     setPosting(false);
@@ -758,8 +760,8 @@ export function CommunityPage() {
       ) : (
         <>
           <DataNotice error={discussionError} />
-          {activeTab === "feed" && <form className="platform-composer" onSubmit={createDiscussion}><span className="section-kicker">START A THREAD</span><input value={title} onChange={event => setTitle(event.target.value)} placeholder="Give the discussion a clear title" maxLength={140} required /><textarea value={body} onChange={event => setBody(event.target.value)} rows={3} placeholder="Add context, define the scope and include source links where relevant." required /><div><small>Respectful debate · Evidence over popularity</small><button className="atlas-button atlas-button--dark" type="submit" disabled={posting}>{posting ? "Publishing…" : "Publish discussion"} <ArrowUpRight size={14} /></button></div></form>}
-          {discussionLoading ? <LoadingLine>Loading discussions…</LoadingLine> : discussions.length ? <div className="platform-discussion-list">{discussions.filter(item => activeTab !== "debates" || item.matchup_id).map(item => <article className="platform-discussion-card" key={item.id}><div className="platform-discussion-meta"><MetaPill>{item.status}</MetaPill><time>{new Date(item.created_at).toLocaleDateString()}</time></div><h2>{item.title}</h2><p>{item.body}</p><Link className="atlas-text-link" to={"/discussions/" + item.id}>Open discussion <ArrowUpRight size={14} /></Link></article>)}</div> : <EmptyState title="No discussions yet" body="Start a thread to open a new question for the community." />}
+          {(activeTab === "feed" || (activeTab === "debates" && matchupId)) && <form className="platform-composer" onSubmit={createDiscussion}><span className="section-kicker">{matchupId ? "START A MATCHUP DEBATE" : "START A THREAD"}</span><input value={title} onChange={event => setTitle(event.target.value)} placeholder="Give the discussion a clear title" maxLength={140} required /><textarea value={body} onChange={event => setBody(event.target.value)} rows={3} placeholder="Add context, define the scope and include source links where relevant." required /><div><small>{matchupId ? "This thread will be linked to the selected matchup." : "Respectful debate · Evidence over popularity"}</small><button className="atlas-button atlas-button--dark" type="submit" disabled={posting}>{posting ? "Publishing…" : "Publish discussion"} <ArrowUpRight size={14} /></button></div></form>}
+          {discussionLoading ? <LoadingLine>Loading discussions…</LoadingLine> : discussions.filter(item => activeTab !== "debates" || Boolean(item.matchup_id)).filter(item => !matchupId || item.matchup_id === matchupId).length ? <div className="platform-discussion-list">{discussions.filter(item => activeTab !== "debates" || Boolean(item.matchup_id)).filter(item => !matchupId || item.matchup_id === matchupId).map(item => <article className="platform-discussion-card" key={item.id}><div className="platform-discussion-meta"><MetaPill>{item.status}</MetaPill><time>{new Date(item.created_at).toLocaleDateString()}</time></div><h2>{item.title}</h2><p>{item.body}</p><Link className="atlas-text-link" to={"/discussions/" + item.id}>Open discussion <ArrowUpRight size={14} /></Link></article>)}</div> : <EmptyState title={matchupId ? "No debate threads for this matchup yet" : "No discussions yet"} body="Start a thread to open a new question for the community." />}
         </>
       )}
     </div>
