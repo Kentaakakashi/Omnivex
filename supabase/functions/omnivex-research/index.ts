@@ -647,7 +647,7 @@ async function analyzeMatchup(client:any,user:any,matchupId:string) {
   const full=participants.map((item:any)=>({...item,version:versionMap.get(item.entity_version_id)}));
   const sideA=full.filter((item:any)=>item.side==="side_a"||item.side==="A"),sideB=full.filter((item:any)=>item.side==="side_b"||item.side==="B");
   if(!sideA.length||!sideB.length)throw new Error("The matchup must have participants on both sides.");
-  const fictionalOnly=full.every((item:any)=>{const type=String(item.version?.entity?.entity_type||"").toLowerCase();return type.includes("character")||type.includes("fictional")||type.includes("team");});
+  const fictionalOnly=full.every((item:any)=>{const type=String(item.version?.entity?.entity_type||"").toLowerCase();return type.includes("character")||type.includes("fictional");});
   const ev=await client.from("evidence_records").select("id,entity_version_id,source_record_id,summary,context,locator,evidence_type,canon_status,reliability_grade,limitations,counter_evidence_notes,review_status")
     .in("entity_version_id",versionIds).eq("review_status","verified").order("created_at",{ascending:false}).limit(160);
   if(ev.error)throw new Error("Could not load verified evidence.");
@@ -694,9 +694,46 @@ async function analyzeMatchup(client:any,user:any,matchupId:string) {
     const ai=await geminiUrlContext(prompt,urls);analysis=ai.data;model=ai.model;
   }
   const validIds=new Set(verifiedEvidence.map((item:any)=>item.id));
-  const citedIds=Array.isArray(analysis.evidence_ids)?analysis.evidence_ids.filter((id:string)=>validIds.has(id)).slice(0,50):[];
+  const rawEvidenceIds=Array.isArray(analysis.evidence_ids)?analysis.evidence_ids:[];
+  const citedIds=rawEvidenceIds.filter((id:string)=>validIds.has(id)).slice(0,50);
+  const auditIssues:string[]=[];
+  if(rawEvidenceIds.length!==citedIds.length) auditIssues.push("The model returned one or more evidence IDs that are not part of this matchup's verified evidence set.");
+  const evidenceAIds=new Set(evidenceA.map((item:any)=>item.id));
+  const evidenceBIds=new Set(evidenceB.map((item:any)=>item.id));
+  const citesSideA=citedIds.some((id:string)=>evidenceAIds.has(id));
+  const citesSideB=citedIds.some((id:string)=>evidenceBIds.has(id));
+
+  const validateStructuredCitations=(items:any[],label:string)=>{
+    if(!Array.isArray(items))return [];
+    return items.slice(0,16).flatMap((item:any)=>{
+      const raw=Array.isArray(item?.evidence_ids)?item.evidence_ids:[];
+      const linked=raw.filter((id:string)=>validIds.has(id));
+      if(!linked.length){auditIssues.push(label+" includes an item without a valid verified evidence citation.");return [];}
+      return [{...item,evidence_ids:linked}];
+    });
+  };
+  analysis.capability_comparison=validateStructuredCitations(analysis.capability_comparison,"Capability comparison");
+  analysis.ability_interactions=validateStructuredCitations(analysis.ability_interactions,"Ability interaction");
+  if(analysis.verdict_type==="evidence_prediction" && (!citesSideA || !citesSideB)){
+    auditIssues.push("A predicted verdict must cite verified evidence from both sides.");
+    analysis.verdict_type="inconclusive";
+    analysis.verdict_summary="Inconclusive: the generated analysis did not provide a valid verified-evidence citation from both sides.";
+    analysis.uncertainty_notes="The independent citation audit could not confirm balanced support for both participants. Review the evidence and rerun the analysis.";
+  }
   analysis.evidence_ids=citedIds;
   analysis.verdict_type=analysis.verdict_type==="evidence_prediction"?"evidence_prediction":"inconclusive";
+  const independentVerification={
+    method:"deterministic_citation_and_version_scope_audit",
+    status:model ? (auditIssues.length ? "needs_review" : "checks_passed") : "not_run",
+    checked_verified_evidence_ids:validIds.size,
+    cited_verified_evidence_ids:citedIds.length,
+    cites_side_a:citesSideA,
+    cites_side_b:citesSideB,
+    structured_comparisons_checked:Array.isArray(analysis.capability_comparison)?analysis.capability_comparison.length:0,
+    ability_interactions_checked:Array.isArray(analysis.ability_interactions)?analysis.ability_interactions.length:0,
+    issues:auditIssues,
+    note:"This automatic audit checks record IDs and side coverage only. It does not approve the report or replace moderator review."
+  };
   const history=await client.from("matchup_reports").select("report_version").eq("matchup_id",matchupId).order("report_version",{ascending:false}).limit(1);
   if(history.error)throw new Error("Could not check report history.");
   const nextVersion=Number(history.data?.[0]?.report_version||0)+1;
@@ -705,6 +742,7 @@ async function analyzeMatchup(client:any,user:any,matchupId:string) {
     matchup:{id:matchup.id,slug:matchup.slug,title:matchup.title,configuration:matchup.configuration},
     participants:full.map((item:any)=>({side:item.side,entity_version_id:item.entity_version_id,entity:item.version?.entity?.name,entity_type:item.version?.entity?.entity_type,version:item.version?.label,continuity:item.version?.continuity,canon_status:item.version?.canon_status})),
     evidence_quality:{verified_evidence_total:verifiedEvidence.length,verified_evidence_side_a:evidenceA.length,verified_evidence_side_b:evidenceB.length,verified_capability_records:verifiedCapabilities.length,sources_available:urls.length,rule:"Submitted, disputed and unreviewed AI claims are excluded."},
+    independent_verification:independentVerification,
     analysis
   };
   const evidenceQuality={
