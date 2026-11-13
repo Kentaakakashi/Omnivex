@@ -72,6 +72,30 @@ create table if not exists public.entity_versions (
   unique(entity_id, slug)
 );
 
+create table if not exists public.entity_media (
+  id uuid primary key default gen_random_uuid(),
+  entity_version_id uuid not null references public.entity_versions(id) on delete cascade,
+  media_kind text not null default 'character_artwork'
+    check (media_kind in ('character_artwork','official_still','cover_art','promotional_art','user_owned_art')),
+  asset_url text not null,
+  source_url text not null,
+  source_title text not null,
+  source_creator text,
+  usage_basis text not null
+    check (usage_basis in ('public_domain','cc0','cc_by','cc_by_sa','licensed','publisher_authorized','user_owned')),
+  license_name text,
+  attribution_text text,
+  alt_text text,
+  is_primary boolean not null default false,
+  approval_status text not null default 'submitted'
+    check (approval_status in ('submitted','needs_review','approved','rejected','outdated')),
+  submitted_by uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  reviewed_by uuid references auth.users(id) on delete set null,
+  reviewed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.entity_aliases (
   id uuid primary key default gen_random_uuid(),
   entity_id uuid not null references public.entities(id) on delete cascade,
@@ -358,6 +382,10 @@ create table if not exists public.moderation_actions (
 create index if not exists entities_name_search_idx on public.entities using gin (to_tsvector('simple', coalesce(name,'')));
 create index if not exists entities_universe_idx on public.entities(primary_universe_id);
 create index if not exists entity_versions_entity_idx on public.entity_versions(entity_id);
+create index if not exists entity_media_version_idx on public.entity_media(entity_version_id, approval_status, is_primary);
+create unique index if not exists entity_media_one_approved_primary_idx
+  on public.entity_media(entity_version_id)
+  where is_primary = true and approval_status = 'approved';
 create index if not exists evidence_version_status_idx on public.evidence_records(entity_version_id, review_status);
 create index if not exists evidence_source_idx on public.evidence_records(source_record_id);
 create index if not exists matchup_created_idx on public.matchups(created_at desc);
@@ -456,6 +484,24 @@ begin
     execute format('create policy "public read" on public.%I for select to anon, authenticated using (true)', t);
   end loop;
 end $$;
+
+-- Version-specific media is visible only after an explicit approval decision.
+drop policy if exists "approved entity media is public" on public.entity_media;
+create policy "approved entity media is public" on public.entity_media
+for select to anon, authenticated using (approval_status = 'approved');
+drop policy if exists "contributors submit version media" on public.entity_media;
+create policy "contributors submit version media" on public.entity_media
+for insert to authenticated with check (
+  submitted_by = (select auth.uid())
+  and approval_status = 'submitted'
+  and reviewed_by is null
+  and reviewed_at is null
+);
+drop policy if exists "moderators manage version media" on public.entity_media;
+create policy "moderators manage version media" on public.entity_media
+for all to authenticated
+using ((auth.jwt() -> 'app_metadata' ->> 'omnivex_role') in ('moderator','admin'))
+with check ((auth.jwt() -> 'app_metadata' ->> 'omnivex_role') in ('moderator','admin'));
 
 -- Authenticated contributions retain authorship and remain unverified until reviewed.
 drop policy if exists "universe contributor insert" on public.universes;
