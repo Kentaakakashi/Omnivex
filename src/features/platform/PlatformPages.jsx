@@ -762,6 +762,7 @@ export function ResearchPage() {
   const { rows: sources, loading: sourcesLoading, error: sourcesError, refresh: refreshSources } = useRows("source_records", "created_at", 200);
   const { rows: relations, loading: relationsLoading, error: relationsError, refresh: refreshRelations } = useRows("evidence_relations", "created_at", 240);
   const { rows: capabilities, loading: capabilitiesLoading, error: capabilitiesError, refresh: refreshCapabilities } = useRows("capabilities", "created_at", 240);
+  const { rows: matchupReports, loading: reportsLoading, error: reportsError, refresh: refreshReports } = useRows("matchup_reports", "created_at", 240);
   const [relationEvidence, setRelationEvidence] = useState({});
   const [moderatingKey, setModeratingKey] = useState("");
   const activeTab = useActiveTab("discover");
@@ -786,18 +787,20 @@ export function ResearchPage() {
     ...evidence.filter(item => ["submitted", "needs_review", "disputed"].includes(item.review_status)).map(item => ({ id:item.id, kind:"evidence", status:item.review_status, title:item.summary, detail:item.context, date:item.created_at })),
     ...capabilities.filter(item => ["submitted", "needs_review", "disputed"].includes(item.status)).map(item => ({ id:item.id, kind:"capability", status:item.status, title:item.capability_name, detail:item.mechanism || item.dimension, date:item.created_at })),
     ...relations.filter(item => ["submitted", "needs_review", "disputed"].includes(item.review_status)).map(item => ({ id:item.id, kind:"relation", status:item.review_status, title:(relationEvidence[item.from_evidence_id] || "Evidence") + " ↔ " + (relationEvidence[item.to_evidence_id] || "Related evidence"), detail:item.relation_type + " · " + (item.note || ""), date:item.created_at })),
-    ...sources.filter(item => ["submitted", "needs_review", "disputed"].includes(item.review_status)).map(item => ({ id:item.id, kind:"source", status:item.review_status, title:item.title, detail:item.publisher_or_host || item.url, date:item.created_at }))
+    ...sources.filter(item => ["submitted", "needs_review", "disputed"].includes(item.review_status)).map(item => ({ id:item.id, kind:"source", status:item.review_status, title:item.title, detail:item.publisher_or_host || item.url, date:item.created_at })),
+    ...matchupReports.filter(item => ["unverified", "needs_review"].includes(item.verification_status)).map(item => ({ id:item.id, kind:"report", status:item.verification_status, title:item.report_body?.matchup?.title ? item.report_body.matchup.title + " · Report v" + item.report_version : "Matchup report v" + item.report_version, detail:item.verdict_summary || item.uncertainty_notes || "Unverified analysis report", date:item.created_at }))
   ].filter(item => [item.title,item.detail,item.status,item.kind].join(" ").toLowerCase().includes(query.toLowerCase()) && (review === "all" || item.status === review)).sort((x,y)=>new Date(y.date || 0)-new Date(x.date || 0));
 
   const reviewRecord = async (item, nextStatus) => {
     if (!isModerator || !user) return;
     setModeratingKey(item.kind + ":" + item.id);
-    const table = { evidence:"evidence_records", capability:"capabilities", relation:"evidence_relations", source:"source_records" }[item.kind];
-    const statusColumn = item.kind === "capability" ? "status" : "review_status";
+    const table = { evidence:"evidence_records", capability:"capabilities", relation:"evidence_relations", source:"source_records", report:"matchup_reports" }[item.kind];
+    const statusColumn = item.kind === "capability" ? "status" : item.kind === "report" ? "verification_status" : "review_status";
     const patch = { [statusColumn]: nextStatus };
-    if (item.kind === "evidence" || item.kind === "relation") {
+    if (item.kind === "evidence" || item.kind === "relation" || item.kind === "report") {
       patch.reviewed_by = user.id;
       patch.reviewed_at = new Date().toISOString();
+      patch.review_notes = nextStatus === "verified" || nextStatus === "passed" ? "Reviewed by an authorized OMNIVEX moderator." : "Marked " + nextStatus + " by an authorized OMNIVEX moderator.";
     }
     const { error: updateError } = await supabase.from(table).update(patch).eq("id", item.id);
     if (updateError) showToast({ title:"Review action failed", description:updateError.message });
@@ -807,6 +810,7 @@ export function ResearchPage() {
       if (item.kind === "capability") refreshCapabilities();
       if (item.kind === "relation") refreshRelations();
       if (item.kind === "source") refreshSources();
+      if (item.kind === "report") refreshReports();
     }
     setModeratingKey("");
   };
@@ -972,7 +976,7 @@ export function ResearchPage() {
             <label className="platform-search-field"><Search size={16} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder={activeTab === "sources" ? "Search source title, publisher or locator…" : activeTab === "relations" ? "Search relationship type, review state or note…" : "Search evidence claims and context…"} /></label>
             {activeTab !== "sources" && <label className="platform-sort"><Filter size={15} /><select value={review} onChange={event => setReview(event.target.value)}><option value="all">All review states</option><option value="submitted">Submitted</option><option value="needs_review">Needs review</option><option value="verified">Verified</option><option value="disputed">Disputed</option><option value="rejected">Rejected</option><option value="outdated">Outdated</option></select></label>}
           </div>
-          <DataNotice error={evidenceError || sourcesError || relationsError || capabilitiesError} />
+          <DataNotice error={evidenceError || sourcesError || relationsError || capabilitiesError || reportsError} />
           {activeTab === "sources" ? (
             sourcesLoading ? <LoadingLine>Loading source library…</LoadingLine> : filteredSources.length ? <div className="platform-list">{filteredSources.map(item => <Link className="platform-list-row" key={item.id} to={"/research/source/" + item.id}><span><strong>{item.title}</strong><small>{item.publisher_or_host || item.source_type} · {item.reliability_grade || "NOT GRADED"} · {item.review_status}</small><p>{item.locator || item.source_notes || "Open the OMNIVEX source record and its linked entities."}</p></span><ArrowUpRight size={17} /></Link>)}</div> : <EmptyState title="No source records match" body="Sources are added as independent records and linked to evidence, not treated as evidence by themselves." />
           ) : activeTab === "relations" ? (
@@ -992,7 +996,7 @@ export function ResearchPage() {
               </>
             ) : <EmptyState title="No relationship suggestions yet" body="Run the consistency scan from a source record after collecting at least two evidence records for the same exact version." />
           ) : activeTab === "queue" ? (
-            (evidenceLoading || capabilitiesLoading || relationsLoading || sourcesLoading) ? <LoadingLine>Loading the moderation queue…</LoadingLine> : !isModerator ? (
+            (evidenceLoading || capabilitiesLoading || relationsLoading || sourcesLoading || reportsLoading) ? <LoadingLine>Loading the moderation queue…</LoadingLine> : !isModerator ? (
               <EmptyState title="Moderator access required" body="Submissions and AI-generated review leads are visible here. Only accounts with an authorized OMNIVEX moderator/admin role can approve, dispute or reject records."/>
             ) : queueItems.length ? (
               <>
@@ -1005,8 +1009,10 @@ export function ResearchPage() {
                       <p>{item.detail || "No additional context supplied."}</p>
                     </span>
                     <div className="research-review-actions">
-                      <button type="button" className="atlas-button atlas-button--dark" disabled={moderatingKey === item.kind + ":" + item.id} onClick={() => reviewRecord(item,"verified")}>Verify</button>
-                      <button type="button" className="atlas-button atlas-button--outline" disabled={moderatingKey === item.kind + ":" + item.id} onClick={() => reviewRecord(item,"disputed")}>Dispute</button>
+                      <button type="button" className="atlas-button atlas-button--dark" disabled={moderatingKey === item.kind + ":" + item.id} onClick={() => reviewRecord(item,item.kind === "report" ? "passed" : "verified")}>{item.kind === "report" ? "Approve report" : "Verify"}</button>
+                      {item.kind === "report"
+                        ? <button type="button" className="atlas-button atlas-button--outline" disabled={moderatingKey === item.kind + ":" + item.id} onClick={() => reviewRecord(item,"needs_review")}>Needs review</button>
+                        : <button type="button" className="atlas-button atlas-button--outline" disabled={moderatingKey === item.kind + ":" + item.id} onClick={() => reviewRecord(item,"disputed")}>Dispute</button>}
                       <button type="button" className="atlas-button atlas-button--outline" disabled={moderatingKey === item.kind + ":" + item.id} onClick={() => reviewRecord(item,"rejected")}>Reject</button>
                     </div>
                   </article>
