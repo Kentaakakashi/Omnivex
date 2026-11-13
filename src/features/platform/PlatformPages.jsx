@@ -327,7 +327,7 @@ export function EntityDossierPage() {
       const { data: versionRows, error: versionError } = await supabase.from("entity_versions").select("*").eq("entity_id", data.id).order("created_at", { ascending: true });
       if (!active) return;
       if (versionError) setError(versionError.message);
-      const selected = (versionRows || []).find(item => item.slug === versionSlug) || (versionRows || [])[0] || null;
+      const selected = (versionRows || []).find(item => item.slug === versionSlug) || (versionRows || []).find(item => item.is_primary_version) || (versionRows || [])[0] || null;
       setVersions(versionRows || []);
       setActiveVersion(selected);
       setLoading(false);
