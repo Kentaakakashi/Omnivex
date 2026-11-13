@@ -21,6 +21,7 @@ import {
   ProfilePage,
   RankingsPage,
   ResearchPage,
+  SourceDetailPage,
   UniverseHubPage
 } from "../features/platform/PlatformPages.jsx";
 
@@ -65,6 +66,7 @@ export function AppRouter() {
               <Route path="matchups/:matchupSlug" element={<MatchupDetailPage/>}/>
 
               <Route path="research" element={<ResearchPage/>}/>
+              <Route path="research/source/:sourceId" element={<SourceDetailPage/>}/>
               <Route path="research/evidence/:evidenceSlug" element={<EvidenceDetailPage/>}/>
 
               <Route path="community" element={<CommunityPage/>}/>
