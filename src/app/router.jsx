@@ -2,6 +2,7 @@ import React from "react";
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router";
 import AppShell from "./layouts/AppShell.jsx";
 import HomePage from "../features/home/HomePage.jsx";
+import CharacterDetailPage from "../features/characters/CharacterDetailPage.jsx";
 import AuthPage from "./pages/AuthPage.jsx";
 import { AuthProvider } from "./providers/AuthProvider.jsx";
 import { ToastProvider } from "./providers/ToastProvider.jsx";
@@ -53,6 +54,8 @@ export function AppRouter() {
               <Route index element={<HomePage/>}/>
 
               <Route path="explore" element={<ExplorePage/>}/>
+              <Route path="character/:entitySlug" element={<CharacterDetailPage/>}/>
+              <Route path="character/:entitySlug/versions/:versionSlug" element={<CharacterDetailPage/>}/>
               <Route path="entity/:entitySlug" element={<EntityDossierPage/>}/>
               <Route path="entity/:entitySlug/versions/:versionSlug" element={<EntityDossierPage/>}/>
               <Route path="universe/:universeSlug" element={<UniverseHubPage/>}/>
@@ -80,8 +83,8 @@ export function AppRouter() {
               {/* Legacy URLs stay useful while old links and bookmarks transition. */}
               <Route path="discover" element={<Navigate to="/explore" replace/>}/>
               <Route path="characters" element={<Navigate to="/explore?tab=characters" replace/>}/>
-              <Route path="characters/:entitySlug" element={<LegacyEntityRedirect/>}/>
-              <Route path="characters/:entitySlug/versions/:versionSlug" element={<LegacyEntityRedirect/>}/>
+              <Route path="characters/:entitySlug" element={<CharacterDetailPage/>}/>
+              <Route path="characters/:entitySlug/versions/:versionSlug" element={<CharacterDetailPage/>}/>
               <Route path="entities/:entitySlug" element={<LegacyEntityRedirect/>}/>
               <Route path="universes" element={<Navigate to="/explore?tab=universes" replace/>}/>
               <Route path="universes/:universeSlug" element={<LegacyUniverseRedirect/>}/>
