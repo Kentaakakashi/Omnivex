@@ -241,7 +241,7 @@ export default function CharacterDetailPage() {
         <aside className="character-side-column">
           <div className="character-side-card">
             <span className="section-kicker">SOURCE DESK</span><h2>References behind this profile</h2>
-            {sources.length ? sources.map(source => <article key={source.id}><small>{source.publisher_or_host || source.source_type} · {source.review_status}</small><strong>{source.title}</strong><a href={source.url} target="_blank" rel="noreferrer">Open source in new tab <ExternalLink size={12}/></a></article>) : <Empty>Source references will appear here as they are linked to this identity.</Empty>}
+            {sources.length ? sources.map(source => <article key={source.id}><small>{source.publisher_or_host || source.source_type} · {source.review_status}</small><strong>{source.title}</strong><Link to={"/research/source/" + source.id}>Open source record in OMNIVEX <ArrowUpRight size={12}/></Link>{source.url && <a href={source.url} target="_blank" rel="noreferrer">Original publisher page <ExternalLink size={11}/></a>}</article>) : <Empty>Source references will appear here as they are linked to this identity.</Empty>}
             <p>Source pages are references; the dossier, version context and research workspace stay inside OMNIVEX.</p>
           </div>
           <div className="character-side-card character-side-card--accent">
