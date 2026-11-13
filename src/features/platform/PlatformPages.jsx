@@ -153,15 +153,24 @@ export function ExplorePage() {
   const [search, setSearch] = useState(new URLSearchParams(location.search).get("q") || "");
   const [sort, setSort] = useState("recent");
   const [mediaByEntity, setMediaByEntity] = useState({});
+  const [aliasesByEntity, setAliasesByEntity] = useState({});
   useEffect(() => {
     let active = true;
     if (!supabase || !entities.length) {
       setMediaByEntity({});
+      setAliasesByEntity({});
       return () => { active = false; };
     }
     (async () => {
+      const entityIds = entities.map(item => item.id);
+      const { data: aliasRows } = await supabase.from("entity_aliases")
+        .select("entity_id,alias").in("entity_id", entityIds);
+      if (!active) return;
+      const aliasMap = {};
+      (aliasRows || []).forEach(item => { (aliasMap[item.entity_id] ||= []).push(item.alias); });
+      setAliasesByEntity(aliasMap);
       const { data: versionRows } = await supabase.from("entity_versions")
-        .select("id,entity_id").in("entity_id", entities.map(item => item.id));
+        .select("id,entity_id").in("entity_id", entityIds);
       const versions = versionRows || [];
       if (!versions.length) { if (active) setMediaByEntity({}); return; }
       const versionToEntity = new Map(versions.map(item => [item.id, item.entity_id]));
@@ -199,7 +208,7 @@ export function ExplorePage() {
   const filteredEntities = useMemo(() => {
     const q = search.trim().toLowerCase();
     let result = entities.filter(item => {
-      const haystack = [item.name, item.short_description, item.entity_type].join(" ").toLowerCase();
+      const haystack = [item.name, item.short_description, item.entity_type, ...(aliasesByEntity[item.id] || [])].join(" ").toLowerCase();
       if (q && !haystack.includes(q)) return false;
       if (activeTab === "characters") return (item.entity_type || "").toLowerCase().includes("character");
       if (activeTab === "mythology") return (item.entity_type || "").toLowerCase().includes("myth");
@@ -212,7 +221,7 @@ export function ExplorePage() {
     if (sort === "alphabetical") result = [...result].sort((a, b) => a.name.localeCompare(b.name));
     else result = [...result].sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
     return result;
-  }, [entities, search, activeTab, sort]);
+  }, [entities, aliasesByEntity, search, activeTab, sort]);
   const filteredUniverses = useMemo(() => {
     const q = search.trim().toLowerCase();
     let result = universes.filter(item => !q || [item.name, item.description, item.category].join(" ").toLowerCase().includes(q));
@@ -834,7 +843,7 @@ export function LibraryPage() {
     <div className="atlas-feature-page platform-page">
       <PageIntro eyebrow="LIBRARY / PERSONAL INDEX" title={<>Keep what matters <em>close.</em></>} description={user ? "Your saved records and private research notes are scoped to your account." : "Sign in to save entities, matchups, evidence and research notes."} action={!user && <Link className="atlas-button atlas-button--dark" to="/auth/sign-in"><LogIn size={15}/> Sign in</Link>} />
       <TabBar tabs={tabs} active={activeTab} pathname="/library"/>
-      {!user ? <EmptyState title="Your library is private" body="Sign in to access saved items and notes." action={<Link className="atlas-button atlas-button--dark" to="/auth/sign-in">Sign in</Link>}/> : loading ? <LoadingLine>Opening your library…</LoadingLine> : activeTab === "notes" ? <><div className="platform-library-actions"><span>{notes.length} PRIVATE NOTES</span><Link className="atlas-button atlas-button--dark" to="/library/notes/new">Create note <Plus size={14}/></Link></div>{notes.length ? <div className="platform-list">{notes.map(item=><article className="platform-list-row platform-list-row--static" key={item.id}><span><strong>{item.title}</strong><small>UPDATED {new Date(item.updated_at).toLocaleString()}</small><p>{(item.body || "").slice(0,180) || "Empty note"}</p></span></article>)}</div> : <EmptyState title="No research notes yet" body="Private notes appear here when you create them."/>}</> : saved.length ? <div className="platform-list">{saved.map(item=><div className="platform-list-row" key={item.id}><Link to={savedLink(item)}><span><strong>{item.record?.name || item.record?.title || item.record?.summary || "Record unavailable"}</strong><small>{item.target_type.toUpperCase()} · SAVED {new Date(item.created_at).toLocaleDateString()}</small></span></Link><button type="button" className="platform-icon-button" onClick={()=>remove(item)} aria-label="Remove from library"><X size={16}/></button></div>)}</div> : <EmptyState title="Your saved library is empty" body="Use Save on an entity or matchup dossier to keep it here."/>}
+      {!user ? <EmptyState title="Your library is private" body="Sign in to access saved items and notes." action={<Link className="atlas-button atlas-button--dark" to="/auth/sign-in">Sign in</Link>}/> : loading ? <LoadingLine>Opening your library…</LoadingLine> : activeTab === "notes" ? <><div className="platform-library-actions"><span>{notes.length} PRIVATE NOTES</span><Link className="atlas-button atlas-button--dark" to="/library/notes/new">Create note <Plus size={14}/></Link></div>{notes.length ? <div className="platform-list">{notes.map(item=><Link className="platform-list-row" key={item.id} to={"/library/notes/" + item.id}><span><strong>{item.title}</strong><small>UPDATED {new Date(item.updated_at).toLocaleString()}</small><p>{(item.body || "").slice(0,180) || "Empty note"}</p></span><ArrowUpRight size={16}/></Link>)}</div> : <EmptyState title="No research notes yet" body="Private notes appear here when you create them."/>}</> : saved.length ? <div className="platform-list">{saved.map(item=><div className="platform-list-row" key={item.id}><Link to={savedLink(item)}><span><strong>{item.record?.name || item.record?.title || item.record?.summary || "Record unavailable"}</strong><small>{item.target_type.toUpperCase()} · SAVED {new Date(item.created_at).toLocaleDateString()}</small></span></Link><button type="button" className="platform-icon-button" onClick={()=>remove(item)} aria-label="Remove from library"><X size={16}/></button></div>)}</div> : <EmptyState title="Your saved library is empty" body="Use Save on an entity or matchup dossier to keep it here."/>}
       <DataNotice error={error}/>
     </div>
   );
@@ -882,6 +891,7 @@ export function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [displayName, setDisplayName] = useState("");
+  const [publicUsername, setPublicUsername] = useState("");
   const [bio, setBio] = useState("");
   const isSelf = username === "me" || (!username && Boolean(user));
   useEffect(() => {
@@ -896,6 +906,7 @@ export function ProfilePage() {
       if (error) showToast({ title: "Profile could not be loaded", description: error.message });
       setProfile(data);
       setDisplayName(data?.display_name || "");
+      setPublicUsername(data?.username || "");
       setBio(data?.bio || "");
       if (data) {
         const [d, m, e] = await Promise.all([
@@ -911,7 +922,17 @@ export function ProfilePage() {
   }, [username, user?.id]);
   const saveProfile = async event => {
     event.preventDefault();
-    const { data, error } = await supabase.from("profiles").update({ display_name: displayName.trim(), bio: bio.trim(), updated_at: new Date().toISOString() }).eq("id", user.id).select("*").single();
+    const cleanUsername = publicUsername.trim().toLowerCase();
+    if (!/^[a-z0-9_]{3,24}$/.test(cleanUsername) || cleanUsername === "me") {
+      showToast("Username must be 3–24 characters using letters, numbers or underscores. 'me' is reserved.");
+      return;
+    }
+    const { data, error } = await supabase.from("profiles").update({
+      username: cleanUsername,
+      display_name: displayName.trim(),
+      bio: bio.trim(),
+      updated_at: new Date().toISOString()
+    }).eq("id", user.id).select("*").single();
     if (error) showToast({ title: "Profile could not be saved", description: error.message });
     else { setProfile(data); setEditing(false); showToast("Profile updated."); }
   };
@@ -921,7 +942,7 @@ export function ProfilePage() {
     <div className="atlas-feature-page platform-page">
       <PageIntro eyebrow={isSelf ? "YOUR PROFILE" : "COMMUNITY MEMBER"} title={profile.display_name || profile.username || "OMNIVEX member"} description={profile.bio || "No public bio has been added yet."} action={isSelf && <button className="atlas-button atlas-button--dark" onClick={()=>setEditing(value=>!value)} type="button">{editing ? "Cancel edit" : "Edit profile"}</button>} />
       <div className="platform-profile-strip"><span className="platform-avatar platform-avatar--large">{(profile.display_name || profile.username || "O").slice(0,1).toUpperCase()}</span><div><strong>@{profile.username || "username-pending"}</strong><small>MEMBER SINCE {new Date(profile.created_at).toLocaleDateString()}</small></div></div>
-      {editing && isSelf && <form className="platform-composer" onSubmit={saveProfile}><label>Display name<input value={displayName} onChange={event=>setDisplayName(event.target.value)} maxLength={60}/></label><label>Public bio<textarea value={bio} onChange={event=>setBio(event.target.value)} rows={3} maxLength={240}/></label><button className="atlas-button atlas-button--dark" type="submit">Save profile <Check size={15}/></button></form>}
+      {editing && isSelf && <form className="platform-composer" onSubmit={saveProfile}><label>Username<input value={publicUsername} onChange={event=>setPublicUsername(event.target.value.replace(/[^a-zA-Z0-9_]/g, "").slice(0,24))} minLength={3} maxLength={24} pattern="[A-Za-z0-9_]{3,24}" placeholder="your_username" required/><small>3–24 letters, numbers or underscores. Your public profile link uses this handle.</small></label><label>Display name<input value={displayName} onChange={event=>setDisplayName(event.target.value)} maxLength={60}/></label><label>Public bio<textarea value={bio} onChange={event=>setBio(event.target.value)} rows={3} maxLength={240}/></label><button className="atlas-button atlas-button--dark" type="submit">Save profile <Check size={15}/></button></form>}
       <div className="platform-profile-stats"><div><strong>{stats.discussions}</strong><small>DISCUSSIONS</small></div><div><strong>{stats.matchups}</strong><small>MATCHUPS CREATED</small></div><div><strong>{stats.evidence}</strong><small>EVIDENCE SUBMISSIONS</small></div></div>
       {isSelf && <div className="platform-inline-actions"><Link className="atlas-button atlas-button--dark" to="/library"><Bookmark size={15}/> Open library</Link><button className="atlas-button atlas-button--outline" type="button" onClick={async()=>{await supabase.auth.signOut();showToast("Signed out.");}}>Sign out</button></div>}
     </div>
