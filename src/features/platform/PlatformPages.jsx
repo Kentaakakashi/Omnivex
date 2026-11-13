@@ -559,6 +559,11 @@ export function MatchupCreatePage() {
 export function MatchupDetailPage() {
   const { matchupSlug } = useParams();
   const activeTab = useActiveTab("overview");
+  const { user } = useAuth();
+  const { showToast } = useToast();
+  const navigate = useNavigate();
+  const [runningAnalysis, setRunningAnalysis] = useState(false);
+  const [analysisActionError, setAnalysisActionError] = useState("");
   const [matchup, setMatchup] = useState(null);
   const [participants, setParticipants] = useState([]);
   const [report, setReport] = useState(null);
@@ -611,6 +616,43 @@ export function MatchupDetailPage() {
     })().catch(queryError => { if (active) { setError(queryError.message || "Unable to load matchup."); setLoading(false); } });
     return () => { active = false; };
   }, [matchupSlug]);
+  const runBattleEngine = async () => {
+    if (!user) { navigate("/auth/sign-in"); return; }
+    setRunningAnalysis(true);
+    setAnalysisActionError("");
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke("omnivex-research", {
+        body: { action: "analyze_matchup", matchupId: matchup.id }
+      });
+      if (invokeError) throw new Error(invokeError.message || "The Battle Engine request failed.");
+      if (data?.error) throw new Error(data.error);
+      const { data: latestReports, error: reportError } = await supabase.from("matchup_reports")
+        .select("*").eq("matchup_id", matchup.id).order("report_version", { ascending: false }).limit(30);
+      if (reportError) throw new Error(reportError.message || "The report was created but could not be reloaded.");
+      const history = latestReports || [];
+      setReportHistory(history);
+      setReport(history[0] || data.report || null);
+      const latest = history[0] || data.report;
+      if (latest?.id) {
+        const { data: links, error: linksError } = await supabase.from("matchup_report_evidence")
+          .select("evidence_record_id,relevance_note").eq("report_id", latest.id);
+        if (linksError) throw new Error(linksError.message || "Could not load report citations.");
+        const evidenceIds = (links || []).map(item => item.evidence_record_id);
+        if (evidenceIds.length) {
+          const { data: evidenceRows, error: evidenceLoadError } = await supabase.from("evidence_records").select("*").in("id", evidenceIds);
+          if (evidenceLoadError) throw new Error(evidenceLoadError.message || "Could not load report evidence.");
+          const byId = new Map((evidenceRows || []).map(item => [item.id, item]));
+          setEvidence((links || []).map(item => ({ ...byId.get(item.evidence_record_id), relevance_note: item.relevance_note })).filter(item => item.id));
+        } else setEvidence([]);
+      }
+      showToast(data.status === "stored_unverified_report" ? "Battle Engine report saved for review." : "Battle Engine finished.");
+    } catch (runError) {
+      setAnalysisActionError(runError?.message || "The Battle Engine could not complete this analysis.");
+    } finally {
+      setRunningAnalysis(false);
+    }
+  };
+
   if (loading) return <div className="atlas-feature-page"><LoadingLine>Loading matchup record…</LoadingLine></div>;
   if (!matchup) return <div className="atlas-feature-page"><EmptyState title="Matchup not found" body={error || "This route does not resolve to a matchup record."} action={<Link className="atlas-button atlas-button--dark" to="/matchups">Matchup index</Link>} /></div>;
   const sideA = participants.filter(item => item.side === "side_a" || item.side === "A");
@@ -640,8 +682,56 @@ export function MatchupDetailPage() {
       )}
       {activeTab === "analysis" && (
         <section className="platform-section platform-matchup-tab">
-          <div className="platform-section-heading"><div><span className="section-kicker">BATTLE ENGINE / REPORT</span><h2>Analysis & verdict</h2></div></div>
-          {report ? <div className="platform-report-card"><MetaPill>{report.verdict_type.replace(/_/g, " ")}</MetaPill><h3>{report.verdict_summary || "Report created without a summary."}</h3><p>{report.uncertainty_notes || "No uncertainty notes recorded."}</p><small>REPORT VERSION {report.report_version} · VERIFICATION {report.verification_status}</small></div> : <EmptyState title="No analysis report exists yet" body="This is a matchup configuration, not a generated verdict. The Battle Engine will attach a report only after its analysis and verification pipeline completes." />}
+          <div className="platform-section-heading">
+            <div><span className="section-kicker">BATTLE ENGINE / REPORT</span><h2>Analysis & verdict</h2></div>
+            <button className="atlas-button atlas-button--dark" type="button" onClick={runBattleEngine} disabled={runningAnalysis}>
+              {runningAnalysis ? "Analyzing…" : report ? "Run new analysis" : "Run Battle Engine"} <ArrowRight size={14}/>
+            </button>
+          </div>
+          <p className="platform-form-note">The engine uses only moderator-verified, version-matched evidence. If either side lacks verified source-backed evidence, the correct result is inconclusive. Every generated report remains unverified until a moderator reviews it.</p>
+          {analysisActionError && <p className="platform-notice platform-notice--error">{analysisActionError}</p>}
+          {report ? (
+            <>
+              <div className="platform-report-card">
+                <MetaPill>{String(report.verdict_type || "inconclusive").replace(/_/g, " ")}</MetaPill>
+                <h3>{report.verdict_summary || "Report created without a summary."}</h3>
+                <p>{report.uncertainty_notes || "No uncertainty notes recorded."}</p>
+                <small>REPORT VERSION {report.report_version} · VERIFICATION {report.verification_status} · {report.created_at ? new Date(report.created_at).toLocaleString() : "DATE NOT RECORDED"}</small>
+              </div>
+              {report.report_body?.evidence_quality && (
+                <div className="platform-config-grid">
+                  {[
+                    ["Verified evidence", report.report_body.evidence_quality.verified_evidence_total],
+                    ["Side A evidence", report.report_body.evidence_quality.verified_evidence_side_a],
+                    ["Side B evidence", report.report_body.evidence_quality.verified_evidence_side_b],
+                    ["Verified capabilities", report.report_body.evidence_quality.verified_capability_records],
+                    ["Sources inspected", report.report_body.evidence_quality.sources_available]
+                  ].map(([label,value]) => <div key={label}><small>{label}</small><strong>{value ?? 0}</strong></div>)}
+                </div>
+              )}
+              {report.report_body?.analysis?.side_a_assessment && <section className="platform-section"><span className="section-kicker">SIDE A</span><p>{report.report_body.analysis.side_a_assessment}</p></section>}
+              {report.report_body?.analysis?.side_b_assessment && <section className="platform-section"><span className="section-kicker">SIDE B</span><p>{report.report_body.analysis.side_b_assessment}</p></section>}
+              {Array.isArray(report.report_body?.analysis?.capability_comparison) && report.report_body.analysis.capability_comparison.length > 0 && (
+                <section className="platform-section">
+                  <div className="platform-section-heading"><div><span className="section-kicker">CAPABILITY COMPARISON</span><h2>What the evidence supports</h2></div></div>
+                  <div className="platform-info-grid">{report.report_body.analysis.capability_comparison.map((item,index)=><article className="platform-info-card" key={index}><span>{item.dimension || "DIMENSION"}</span><h3>Side A</h3><p>{item.side_a || "Not established."}</p><h3>Side B</h3><p>{item.side_b || "Not established."}</p><small>{item.limits || "No additional limitation recorded."}</small></article>)}</div>
+                </section>
+              )}
+              {Array.isArray(report.report_body?.analysis?.ability_interactions) && report.report_body.analysis.ability_interactions.length > 0 && (
+                <section className="platform-section">
+                  <div className="platform-section-heading"><div><span className="section-kicker">INTERACTIONS</span><h2>Evidence-aware interactions</h2></div></div>
+                  <div className="platform-list">{report.report_body.analysis.ability_interactions.map((item,index)=><article className="platform-list-row platform-list-row--static" key={index}><span><strong>{item.interaction || "Interaction"}</strong><p>{item.reasoning || "No supported explanation recorded."}</p><small>CONFIDENCE · {item.confidence || "UNSPECIFIED"}</small></span></article>)}</div>
+                </section>
+              )}
+              {["decisive_factors","conditions_that_change_outcome","unresolved_conflicts"].map((key)=>Array.isArray(report.report_body?.analysis?.[key]) && report.report_body.analysis[key].length > 0 ? (
+                <section className="platform-section" key={key}>
+                  <div className="platform-section-heading"><div><span className="section-kicker">{key.replace(/_/g," ").toUpperCase()}</span><h2>{key === "decisive_factors" ? "Relevant factors" : key === "conditions_that_change_outcome" ? "What could change the outcome" : "Unresolved conflicts"}</h2></div></div>
+                  <ul className="platform-report-points">{report.report_body.analysis[key].map((item,index)=><li key={index}>{item}</li>)}</ul>
+                </section>
+              ) : null)}
+              <p className="platform-form-note">Report integrity: {report.report_body?.analysis_completeness?.status || "pending"}. Unsupported claims used: {report.report_body?.analysis_completeness?.unsupported_claims_used ?? "not reported"}. This report is a reproducible research snapshot, not a canon-confirmed outcome.</p>
+            </>
+          ) : <EmptyState title="No analysis report exists yet" body="Run the Battle Engine to generate a report. Without verified evidence on both sides, it will store an explicit inconclusive result instead of inventing a winner." />}
         </section>
       )}
       {activeTab === "evidence" && (
