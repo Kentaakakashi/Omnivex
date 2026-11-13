@@ -719,7 +719,7 @@ export function ResearchPage() {
       });
       if (invokeError) throw new Error(invokeError.message || "Could not save source.");
       if (data?.error) throw new Error(data.error);
-      setSavedKeys(old => ({ ...old, [source.key]: true }));
+      setSavedKeys(old => ({ ...old, [source.key]: { id: data.source?.id || null } }));
       refreshSources();
       showToast(data.alreadySaved ? "Source is already in the library." : "Source saved as submitted.");
     } catch (error) {
@@ -811,7 +811,9 @@ export function ResearchPage() {
                           <small>{source.provider} · {source.sourceType.replaceAll("_", " ")}{source.publishedYear ? " · " + source.publishedYear : ""}</small>
                           <strong>{source.title}</strong>
                           <p>{source.snippet || "The provider returned a bibliographic reference without an abstract."}</p>
-                          <a href={source.url} target="_blank" rel="noreferrer">Inspect original source <ArrowUpRight size={13} /></a>
+                          {savedKeys[source.key]?.id
+                            ? <Link to={"/research/source/" + savedKeys[source.key].id}>Open source in OMNIVEX <ArrowUpRight size={13}/></Link>
+                            : <small className="research-source-hint">Save this reference to open its OMNIVEX source record.</small>}
                         </span>
                         <button className="atlas-button atlas-button--outline" type="button" disabled={Boolean(savedKeys[source.key]) || savingKey === source.key} onClick={() => saveDiscoveredSource(source)}>
                           {savedKeys[source.key] ? "Saved" : savingKey === source.key ? "Saving…" : "Save source"}
@@ -834,7 +836,7 @@ export function ResearchPage() {
           </div>
           <DataNotice error={evidenceError || sourcesError} />
           {activeTab === "sources" ? (
-            sourcesLoading ? <LoadingLine>Loading source library…</LoadingLine> : filteredSources.length ? <div className="platform-list">{filteredSources.map(item => <article className="platform-list-row platform-list-row--static" key={item.id}><span><strong>{item.title}</strong><small>{item.publisher_or_host || item.source_type} · {item.reliability_grade || "NOT GRADED"} · {item.review_status}</small><p>{item.locator || "No source locator added."}</p></span>{item.url && <a href={item.url} target="_blank" rel="noreferrer" aria-label={"Open " + item.title}><ArrowUpRight size={17} /></a>}</article>)}</div> : <EmptyState title="No source records match" body="Sources are added as independent records and linked to evidence, not treated as evidence by themselves." />
+            sourcesLoading ? <LoadingLine>Loading source library…</LoadingLine> : filteredSources.length ? <div className="platform-list">{filteredSources.map(item => <Link className="platform-list-row" key={item.id} to={"/research/source/" + item.id}><span><strong>{item.title}</strong><small>{item.publisher_or_host || item.source_type} · {item.reliability_grade || "NOT GRADED"} · {item.review_status}</small><p>{item.locator || item.source_notes || "Open the OMNIVEX source record and its linked entities."}</p></span><ArrowUpRight size={17} /></Link>)}</div> : <EmptyState title="No source records match" body="Sources are added as independent records and linked to evidence, not treated as evidence by themselves." />
           ) : evidenceLoading ? <LoadingLine>Loading evidence records…</LoadingLine> : (
             <>
               {activeTab === "queue" && <div className="platform-queue-note"><ShieldCheck size={17} /><span>Review queue shows submitted and disputed records. Only authorized moderators can change verification status.</span></div>}
@@ -890,6 +892,80 @@ export function EvidenceDetailPage() {
           <section><span className="section-kicker">LIMITS & COUNTER-EVIDENCE</span><h2>What could change the interpretation?</h2><p><strong>Limitations</strong> · {record.limitations || "Not recorded."}</p><p><strong>Counter-evidence</strong> · {record.counter_evidence_notes || "Not recorded."}</p></section>
         </div>
       ) : <EmptyState title="Evidence record not found" body="This identifier does not resolve to a public evidence record." />}
+    </div>
+  );
+}
+
+export function SourceDetailPage() {
+  const { sourceId } = useParams();
+  const [source, setSource] = useState(null);
+  const [entities, setEntities] = useState([]);
+  const [evidence, setEvidence] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    if (!supabase) { setLoading(false); return () => { active = false; }; }
+    (async () => {
+      const { data, error: sourceError } = await supabase.from("source_records").select("*").eq("id", sourceId).maybeSingle();
+      if (!active) return;
+      if (sourceError) throw sourceError;
+      if (!data) { setSource(null); setLoading(false); return; }
+      setSource(data);
+
+      const [linkResult, evidenceResult] = await Promise.all([
+        supabase.from("entity_source_links").select("entity_id,relationship_type,note").eq("source_record_id", data.id),
+        supabase.from("evidence_records").select("id,entity_version_id,summary,evidence_type,review_status,canon_status,locator").eq("source_record_id", data.id).order("created_at", { ascending: false }).limit(80)
+      ]);
+      if (!active) return;
+      if (linkResult.error || evidenceResult.error) throw linkResult.error || evidenceResult.error;
+      const entityIds = [...new Set((linkResult.data || []).map(item => item.entity_id))];
+      if (entityIds.length) {
+        const { data: rows, error: entityError } = await supabase.from("entities")
+          .select("id,name,slug,entity_type").in("id", entityIds).order("name");
+        if (entityError) throw entityError;
+        if (active) setEntities(rows || []);
+      }
+      setEvidence(evidenceResult.data || []);
+      setLoading(false);
+    })().catch(queryError => {
+      if (active) { setError(queryError?.message || "Unable to load the source record."); setLoading(false); }
+    });
+    return () => { active = false; };
+  }, [sourceId]);
+
+  if (loading) return <div className="atlas-feature-page platform-page"><LoadingLine>Opening source record…</LoadingLine></div>;
+  if (!source) return <div className="atlas-feature-page platform-page"><EmptyState title="Source record not found" body="This reference has not been saved into the OMNIVEX source library." action={<Link className="atlas-button atlas-button--dark" to="/research?tab=discover">Discover sources</Link>} /></div>;
+
+  return (
+    <div className="atlas-feature-page platform-page">
+      <PageIntro eyebrow="RESEARCH / SOURCE RECORD" title={source.title} description="This is the OMNIVEX record for a reference. Its metadata, linked identities and evidence claims stay here; the publisher's original page is an optional citation destination." action={<Link className="atlas-text-link" to="/research?tab=sources"><ArrowLeft size={15}/> Source library</Link>} />
+      <DataNotice error={error}/>
+      <div className="platform-meta-row">
+        <MetaPill>{source.source_type || "SOURCE"}</MetaPill>
+        <MetaPill>{source.publisher_or_host || "Publisher not recorded"}</MetaPill>
+        <MetaPill>{source.review_status || "submitted"}</MetaPill>
+        <MetaPill>{source.reliability_grade || "NOT GRADED"}</MetaPill>
+      </div>
+      <section className="platform-section">
+        <div className="platform-section-heading"><div><span className="section-kicker">REFERENCE METADATA</span><h2>What this source is</h2></div></div>
+        <div className="platform-info-grid">
+          <article className="platform-info-card"><span>PUBLISHER / HOST</span><h3>{source.publisher_or_host || "Not recorded"}</h3><p>{source.author_or_creator || "Creator or author not recorded."}</p></article>
+          <article className="platform-info-card"><span>PUBLICATION DATE</span><h3>{source.published_at || "Not recorded"}</h3><p>Accessed {source.accessed_at ? new Date(source.accessed_at).toLocaleDateString() : "date not recorded"}</p></article>
+          <article className="platform-info-card"><span>REVIEW STATE</span><h3>{source.review_status || "submitted"}</h3><p>Source reliability is kept separate from the quality of any interpretation made from it.</p></article>
+        </div>
+        <p className="platform-caption">{source.locator || source.source_notes || "No chapter, issue, episode or page locator has been attached yet."}</p>
+        {source.url && <a className="atlas-button atlas-button--outline" href={source.url} target="_blank" rel="noreferrer">Open original publisher reference <ArrowUpRight size={14}/></a>}
+      </section>
+      <section className="platform-section">
+        <div className="platform-section-heading"><div><span className="section-kicker">CONNECTED IDENTITIES</span><h2>Characters and entities</h2></div><span>{entities.length} LINKED</span></div>
+        {entities.length ? <div className="platform-card-grid">{entities.map(item => <RecordCard key={item.id} record={item} type={(item.entity_type || "ENTITY").toUpperCase()} to={String(item.entity_type || "").toLowerCase().includes("character") ? "/character/" + item.slug : "/entity/" + item.slug}/>)}</div> : <EmptyState title="No identity links yet" body="This reference has not been attached to a character or entity dossier."/>}
+      </section>
+      <section className="platform-section">
+        <div className="platform-section-heading"><div><span className="section-kicker">EVIDENCE USING THIS SOURCE</span><h2>Claims linked to this reference</h2></div><span>{evidence.length} CLAIMS</span></div>
+        {evidence.length ? <div className="platform-list">{evidence.map(item => <Link className="platform-list-row" key={item.id} to={"/research/evidence/" + item.id}><span><strong>{item.summary}</strong><small>{item.evidence_type} · {item.canon_status} · {item.review_status}</small><p>{item.locator || "No source locator recorded."}</p></span><ArrowUpRight size={16}/></Link>)}</div> : <EmptyState title="No evidence claims linked" body="A source record by itself is not a feat. Evidence claims will appear only when a specific version, context and locator are recorded."/>}
+      </section>
     </div>
   );
 }
