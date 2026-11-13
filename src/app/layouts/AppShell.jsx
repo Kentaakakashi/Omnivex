@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Link, Outlet, useLocation } from "react-router";
-import { ArrowUpRight, Bookmark, Compass, House, LogIn, Menu, Microscope, Swords, Trophy, Users, X } from "lucide-react";
+import { ArrowUpRight, Bookmark, Compass, House, LogIn, Menu, Microscope, Search, Swords, Trophy, Users, X } from "lucide-react";
 import { useAuth } from "../providers/AuthProvider.jsx";
 
 const primaryNavigation = [
@@ -37,6 +37,7 @@ export default function AppShell() {
             })}
           </nav>
           <div className="header-utilities">
+            <Link to="/explore" className="header-utility-link" aria-label="Search OMNIVEX" title="Search OMNIVEX"><Search size={17}/></Link>
             <Link to="/library" className="header-utility-link" aria-label="Open library" title="Library"><Bookmark size={17}/></Link>
             <Link to={user ? "/profile/me" : "/auth/sign-in"} className="sign-in-link">{user ? "Profile" : <><LogIn size={15}/> Sign in</>} <ArrowUpRight size={14}/></Link>
           </div>
@@ -47,6 +48,7 @@ export default function AppShell() {
             <span className="brand-name">OMNIVEX<small>BEYOND EVERY UNIVERSE</small></span>
           </Link>
           <div className="mobile-header-actions">
+            <Link className="header-utility-link" to="/explore" aria-label="Search OMNIVEX"><Search size={17}/></Link>
             <Link className="header-utility-link" to="/library" aria-label="Open library"><Bookmark size={17}/></Link>
             <button type="button" className="mobile-menu-toggle" aria-label={menuOpen ? "Close navigation" : "Open navigation"} aria-expanded={menuOpen} onClick={() => setMenuOpen(value => !value)}>{menuOpen ? <X size={22}/> : <Menu size={22}/>}</button>
           </div>
