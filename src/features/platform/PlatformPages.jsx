@@ -709,6 +709,14 @@ export function MatchupDetailPage() {
                   ].map(([label,value]) => <div key={label}><small>{label}</small><strong>{value ?? 0}</strong></div>)}
                 </div>
               )}
+              {report.report_body?.independent_verification && (
+                <div className="platform-report-audit">
+                  <div><span className="section-kicker">INDEPENDENT VALIDATION</span><strong>{String(report.report_body.independent_verification.status || "not_run").replace(/_/g," ")}</strong></div>
+                  <p>{report.report_body.independent_verification.note || "Automated citation audit."}</p>
+                  {report.report_body.independent_verification.issues?.length > 0 && <ul>{report.report_body.independent_verification.issues.map((item,index)=><li key={index}>{item}</li>)}</ul>}
+                  <small>{report.report_body.independent_verification.cited_verified_evidence_ids || 0} citations checked · Side A {report.report_body.independent_verification.cites_side_a ? "covered" : "not covered"} · Side B {report.report_body.independent_verification.cites_side_b ? "covered" : "not covered"}</small>
+                </div>
+              )}
               {report.report_body?.analysis?.side_a_assessment && <section className="platform-section"><span className="section-kicker">SIDE A</span><p>{report.report_body.analysis.side_a_assessment}</p></section>}
               {report.report_body?.analysis?.side_b_assessment && <section className="platform-section"><span className="section-kicker">SIDE B</span><p>{report.report_body.analysis.side_b_assessment}</p></section>}
               {Array.isArray(report.report_body?.analysis?.capability_comparison) && report.report_body.analysis.capability_comparison.length > 0 && (
