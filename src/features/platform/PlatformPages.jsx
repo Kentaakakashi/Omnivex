@@ -898,11 +898,21 @@ export function EvidenceDetailPage() {
 
 export function SourceDetailPage() {
   const { sourceId } = useParams();
+  const { user } = useAuth();
+  const { showToast } = useToast();
+  const navigate = useNavigate();
   const [source, setSource] = useState(null);
   const [entities, setEntities] = useState([]);
+  const [versions, setVersions] = useState([]);
+  const [selectedVersionId, setSelectedVersionId] = useState("");
   const [evidence, setEvidence] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [analysisError, setAnalysisError] = useState("");
+  const [analysisResult, setAnalysisResult] = useState(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanResult, setScanResult] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -922,10 +932,19 @@ export function SourceDetailPage() {
       if (linkResult.error || evidenceResult.error) throw linkResult.error || evidenceResult.error;
       const entityIds = [...new Set((linkResult.data || []).map(item => item.entity_id))];
       if (entityIds.length) {
-        const { data: rows, error: entityError } = await supabase.from("entities")
-          .select("id,name,slug,entity_type").in("id", entityIds).order("name");
-        if (entityError) throw entityError;
-        if (active) setEntities(rows || []);
+        const [entitiesResult, versionsResult] = await Promise.all([
+          supabase.from("entities").select("id,name,slug,entity_type").in("id", entityIds).order("name"),
+          supabase.from("entity_versions").select("id,entity_id,label,continuity,canon_status,is_primary_version,status").in("entity_id", entityIds).order("created_at")
+        ]);
+        if (entitiesResult.error || versionsResult.error) throw entitiesResult.error || versionsResult.error;
+        if (!active) return;
+        const entityRows = entitiesResult.data || [];
+        setEntities(entityRows);
+        const entityMap = new Map(entityRows.map(item => [item.id, item]));
+        const versionChoices = (versionsResult.data || []).map(item => ({ ...item, entity: entityMap.get(item.entity_id) }));
+        setVersions(versionChoices);
+        const preferred = versionChoices.find(item => item.is_primary_version) || versionChoices[0];
+        if (preferred) setSelectedVersionId(preferred.id);
       }
       setEvidence(evidenceResult.data || []);
       setLoading(false);
@@ -934,6 +953,48 @@ export function SourceDetailPage() {
     });
     return () => { active = false; };
   }, [sourceId]);
+
+  const runSourceAnalysis = async () => {
+    if (!user) { navigate("/auth/sign-in"); return; }
+    if (!selectedVersionId) { setAnalysisError("Link this source to an entity and choose an exact version first."); return; }
+    setAnalyzing(true); setAnalysisError(""); setAnalysisResult(null);
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke("omnivex-research", {
+        body: { action: "analyze_source", sourceId, entityVersionId: selectedVersionId }
+      });
+      if (invokeError) throw new Error(invokeError.message || "The source analysis request failed.");
+      if (data?.error) throw new Error(data.error);
+      setAnalysisResult(data);
+      const { data: refreshed, error: refreshError } = await supabase.from("evidence_records")
+        .select("id,entity_version_id,summary,evidence_type,review_status,canon_status,locator")
+        .eq("source_record_id", sourceId).order("created_at", { ascending: false }).limit(80);
+      if (!refreshError) setEvidence(refreshed || []);
+      showToast((data.evidence_created || 0) + " evidence claims submitted; " + (data.capabilities_created || 0) + " capability records submitted.");
+    } catch (runError) {
+      setAnalysisError(runError?.message || "Source analysis failed.");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const scanContradictions = async () => {
+    if (!user) { navigate("/auth/sign-in"); return; }
+    if (!selectedVersionId) { setAnalysisError("Choose an exact version before scanning."); return; }
+    setScanning(true); setAnalysisError(""); setScanResult(null);
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke("omnivex-research", {
+        body: { action: "scan_contradictions", entityVersionId: selectedVersionId }
+      });
+      if (invokeError) throw new Error(invokeError.message || "The consistency scan failed.");
+      if (data?.error) throw new Error(data.error);
+      setScanResult(data);
+      showToast((data.relations_created || 0) + " relationship suggestions sent to review.");
+    } catch (runError) {
+      setAnalysisError(runError?.message || "Consistency scan failed.");
+    } finally {
+      setScanning(false);
+    }
+  };
 
   if (loading) return <div className="atlas-feature-page platform-page"><LoadingLine>Opening source record…</LoadingLine></div>;
   if (!source) return <div className="atlas-feature-page platform-page"><EmptyState title="Source record not found" body="This reference has not been saved into the OMNIVEX source library." action={<Link className="atlas-button atlas-button--dark" to="/research?tab=discover">Discover sources</Link>} /></div>;
@@ -959,12 +1020,43 @@ export function SourceDetailPage() {
         {source.url && <a className="atlas-button atlas-button--outline" href={source.url} target="_blank" rel="noreferrer">Open original publisher reference <ArrowUpRight size={14}/></a>}
       </section>
       <section className="platform-section">
+        <div className="platform-section-heading"><div><span className="section-kicker">AI RESEARCH / HUMAN REVIEW</span><h2>Extract evidence from this source.</h2></div></div>
+        <p className="platform-form-note">OMNIVEX inspects the selected public source URL, extracts only source-supported claims, and saves them as submitted evidence and capabilities. Nothing is automatically verified.</p>
+        {versions.length ? (
+          <div className="research-ai-controls">
+            <label className="platform-form-label">Exact entity version
+              <select value={selectedVersionId} onChange={event => setSelectedVersionId(event.target.value)}>
+                {versions.map(item => <option key={item.id} value={item.id}>{item.entity?.name || "Entity"} · {item.label} · {item.continuity || "Continuity unspecified"}</option>)}
+              </select>
+            </label>
+            <div className="research-ai-actions">
+              <button className="atlas-button atlas-button--dark" type="button" onClick={runSourceAnalysis} disabled={analyzing || scanning}>{analyzing ? "Inspecting source…" : "Extract evidence & capabilities"} <ArrowRight size={14}/></button>
+              <button className="atlas-button atlas-button--outline" type="button" onClick={scanContradictions} disabled={analyzing || scanning}>{scanning ? "Checking consistency…" : "Scan for contradictions"} <ShieldCheck size={14}/></button>
+            </div>
+          </div>
+        ) : <EmptyState title="No linked entity version" body="Connect this source to a character/entity dossier before extracting evidence from it."/>}
+        {!user && <p className="platform-form-note">Sign in to submit research generated from a source.</p>}
+        {analysisError && <p className="platform-notice platform-notice--error">{analysisError}</p>}
+        {analysisResult && <div className="research-ai-result">
+          <MetaPill>{analysisResult.status?.replace(/_/g, " ")}</MetaPill>
+          <strong>{analysisResult.evidence_created || 0} evidence claims · {analysisResult.capabilities_created || 0} capability records · {analysisResult.possible_relations_created || 0} possible relationships</strong>
+          <p>{analysisResult.source_summary || analysisResult.insufficient_reason || "Source review completed. New records remain in the review queue."}</p>
+          {analysisResult.limitations?.length > 0 && <ul>{analysisResult.limitations.map((item,index)=><li key={index}>{item}</li>)}</ul>}
+        </div>}
+        {scanResult && <div className="research-ai-result">
+          <MetaPill>{scanResult.status?.replace(/_/g, " ")}</MetaPill>
+          <strong>{scanResult.relations_created || 0} relationship suggestions · {scanResult.records_checked || 0} records checked</strong>
+          <p>{scanResult.summary || "Review suggestions were saved for moderator inspection."}</p>
+          <Link to="/research?tab=relations" className="atlas-text-link">Open relationship review <ArrowUpRight size={14}/></Link>
+        </div>}
+      </section>
+      <section className="platform-section">
         <div className="platform-section-heading"><div><span className="section-kicker">CONNECTED IDENTITIES</span><h2>Characters and entities</h2></div><span>{entities.length} LINKED</span></div>
         {entities.length ? <div className="platform-card-grid">{entities.map(item => <RecordCard key={item.id} record={item} type={(item.entity_type || "ENTITY").toUpperCase()} to={String(item.entity_type || "").toLowerCase().includes("character") ? "/character/" + item.slug : "/entity/" + item.slug}/>)}</div> : <EmptyState title="No identity links yet" body="This reference has not been attached to a character or entity dossier."/>}
       </section>
       <section className="platform-section">
         <div className="platform-section-heading"><div><span className="section-kicker">EVIDENCE USING THIS SOURCE</span><h2>Claims linked to this reference</h2></div><span>{evidence.length} CLAIMS</span></div>
-        {evidence.length ? <div className="platform-list">{evidence.map(item => <Link className="platform-list-row" key={item.id} to={"/research/evidence/" + item.id}><span><strong>{item.summary}</strong><small>{item.evidence_type} · {item.canon_status} · {item.review_status}</small><p>{item.locator || "No source locator recorded."}</p></span><ArrowUpRight size={16}/></Link>)}</div> : <EmptyState title="No evidence claims linked" body="A source record by itself is not a feat. Evidence claims will appear only when a specific version, context and locator are recorded."/>}
+        {evidence.length ? <div className="platform-list">{evidence.map(item => <Link className="platform-list-row" key={item.id} to={"/research/evidence/" + item.id}><span><strong>{item.summary}</strong><small>{item.evidence_type} · {item.canon_status} · {item.review_status}</small><p>{item.locator || "No source locator recorded."}</p></span><ArrowUpRight size={16}/></Link>)}</div> : <EmptyState title="No evidence claims linked" body="A source record by itself is not a feat. Evidence claims appear only when a specific version, context and locator are recorded."/>}
       </section>
     </div>
   );
