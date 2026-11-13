@@ -326,12 +326,12 @@ async function importWikidata(client: any, userId: string, itemId: string) {
     publisher: item.sitelinks?.enwiki ? "Wikipedia" : "Wikidata",
     author: null
   });
-  const { error: linkError } = await client.from("entity_source_links").upsert({
+  const { error: linkError } = await client.from("entity_source_links").insert({
     entity_id: entity.id, source_record_id: saved.source.id,
     relationship_type: "reference_database", note: "Wikidata identity reference; not a canon or feat verification.",
     created_by: userId
-  }, { onConflict: "entity_id,source_record_id,relationship_type" });
-  if (linkError) throw new Error("Could not connect the identity reference: " + linkError.message);
+  });
+  if (linkError && linkError.code !== "23505") throw new Error("Could not connect the identity reference: " + linkError.message);
   return {
     entity,
     version,
