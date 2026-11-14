@@ -1174,10 +1174,10 @@ async function importOfficialCatalogPage(client: any, user: any, sourceKey: stri
   }
   if (!candidates.length) {
     const title = firstTagText(directoryHtml, "title") || metaContent(directoryHtml, "og:title") || "";
-    const linkCount = (directoryHtml.match(/<a\\b/gi) || []).length;
+    const linkCount = directoryHtml.split("<a").length - 1;
     const expectedPathHits = sourceKey === "dc"
-      ? (directoryHtml.match(/\\/characters\\/[a-z0-9-]+/gi) || []).length
-      : (directoryHtml.match(/\\/character\\/[a-z0-9_-]+/gi) || []).length;
+      ? directoryHtml.split("/characters/").length - 1
+      : directoryHtml.split("/character/").length - 1;
     throw new Error(
       "Official directory parser found zero character links (page " + page +
       "; HTML bytes " + directoryHtml.length +
