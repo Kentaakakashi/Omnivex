@@ -151,7 +151,7 @@ export default function CharacterDetailPage() {
       if (active) setError(loadError?.message || "Some dossier sections could not be loaded.");
     });
     return () => { active = false; };
-  }, [activeVersion]);
+  }, [activeVersion, user?.id]);
 
   const save = async () => {
     if (!user) { navigate("/auth/sign-in"); return; }
