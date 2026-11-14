@@ -14,10 +14,22 @@ export default function CatalogImportPage() {
   const [testing, setTesting] = useState(false);
   const [enrichmentRunning, setEnrichmentRunning] = useState(false);
   const [marvelRunning, setMarvelRunning] = useState(false);
-  const [enrichmentOffset, setEnrichmentOffset] = useState(0);
-  const [marvelOffset, setMarvelOffset] = useState(0);
-  const [enrichmentHasMore, setEnrichmentHasMore] = useState(true);
-  const [marvelHasMore, setMarvelHasMore] = useState(true);
+  const [enrichmentOffset, setEnrichmentOffset] = useState(() => {
+    try { return Math.max(0, Number(window.localStorage.getItem("omnivex-existing-enrichment-offset") || 0)); }
+    catch { return 0; }
+  });
+  const [marvelOffset, setMarvelOffset] = useState(() => {
+    try { return Math.max(0, Number(window.localStorage.getItem("omnivex-marvel-import-offset") || 0)); }
+    catch { return 0; }
+  });
+  const [enrichmentHasMore, setEnrichmentHasMore] = useState(() => {
+    try { return window.localStorage.getItem("omnivex-existing-enrichment-done") !== "true"; }
+    catch { return true; }
+  });
+  const [marvelHasMore, setMarvelHasMore] = useState(() => {
+    try { return window.localStorage.getItem("omnivex-marvel-import-done") !== "true"; }
+    catch { return true; }
+  });
   const [stopRequested, setStopRequested] = useState(false);
   const [activeBatch, setActiveBatch] = useState("");
   const [logs, setLogs] = useState([]);
@@ -61,6 +73,15 @@ export default function CatalogImportPage() {
   const addLog = item => {
     setLogs(old => [...old.slice(-11), { id: Date.now() + Math.random(), ...item }]);
   };
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("omnivex-existing-enrichment-offset", String(enrichmentOffset));
+      window.localStorage.setItem("omnivex-existing-enrichment-done", enrichmentHasMore ? "false" : "true");
+      window.localStorage.setItem("omnivex-marvel-import-offset", String(marvelOffset));
+      window.localStorage.setItem("omnivex-marvel-import-done", marvelHasMore ? "false" : "true");
+    } catch {}
+  }, [enrichmentOffset, enrichmentHasMore, marvelOffset, marvelHasMore]);
 
   const runPage = async (source, page, dryRun = false) => {
     const { data, error: invokeError } = await supabase.functions.invoke("omnivex-research", {
@@ -153,66 +174,108 @@ export default function CatalogImportPage() {
   const enrichExistingBatch = async () => {
     if (!supabase || !user || running || testing || enrichmentRunning || marvelRunning || !enrichmentHasMore) return;
     setEnrichmentRunning(true);
+    setStopRequested(false);
+    stopRef.current = false;
     setError("");
-    setActiveBatch("Existing characters · " + (enrichmentOffset + 1) + " onward");
+    let cursor = enrichmentOffset;
+    let hasMore = enrichmentHasMore;
+    let batches = 0;
     try {
-      const data = await runResearchBatch("enrich_existing_catalog_batch", { offset: enrichmentOffset, limit: 3 });
-      setEnrichmentOffset(data.next_offset || enrichmentOffset);
-      setEnrichmentHasMore(Boolean(data.has_more));
-      const summary = (data.results || []).map(item =>
-        item.name + (item.skipped
-          ? " — skipped: " + (item.reason || "No safe match")
-          : " — " + (item.image?.imported ? "image added" : "no licensed image") +
-            ", " + (item.evidence_created || 0) + " feat candidates")
-      ).join(" · ");
+      while (hasMore && !stopRef.current) {
+        setActiveBatch("Existing characters · records " + (cursor + 1) + " onward");
+        const data = await runResearchBatch("enrich_existing_catalog_batch", { offset: cursor, limit: 3 });
+        const batchStart = cursor;
+        cursor = Number.isInteger(data.next_offset) ? data.next_offset : cursor + Number(data.processed || 0);
+        hasMore = Boolean(data.has_more);
+        setEnrichmentOffset(cursor);
+        setEnrichmentHasMore(hasMore);
+        const summary = (data.results || []).map(item =>
+          item.name + (item.skipped
+            ? " — skipped: " + (item.reason || "No safe match")
+            : " — " + (item.image?.imported ? "image added" : "no licensed image") +
+              ", " + (item.evidence_created || 0) + " feat candidates")
+        ).join(" · ");
+        addLog({
+          source: "EXISTING ENTITY ENRICHMENT",
+          page: "offset " + batchStart,
+          imported: (data.results || []).filter(item => !item.skipped).length,
+          skipped: (data.results || []).filter(item => item.skipped).length,
+          failed: 0,
+          candidates: data.processed || 0,
+          message: summary || "No existing characters returned in this batch."
+        });
+        batches++;
+        if (!data.processed || batches % 5 === 0) await refreshCounts();
+      }
+      await refreshCounts();
       addLog({
         source: "EXISTING ENTITY ENRICHMENT",
-        page: "offset " + enrichmentOffset,
-        imported: (data.results || []).filter(item => !item.skipped).length,
-        skipped: (data.results || []).filter(item => item.skipped).length,
-        failed: 0,
-        candidates: data.processed || 0,
-        message: summary || "No existing characters returned in this batch."
+        page: stopRef.current ? "paused" : "complete",
+        imported: 0, skipped: 0, failed: 0, candidates: 0,
+        message: stopRef.current
+          ? "Paused after record " + cursor + ". Progress is saved on this device; press continue to resume."
+          : "Existing character scan reached the end of the catalogue. Ambiguous matches were skipped rather than guessed."
       });
-      await refreshCounts();
     } catch (batchError) {
-      setError(batchError?.message || "Existing character enrichment failed.");
+      setError(batchError?.message || "Existing character enrichment failed. Resume from the saved cursor.");
     } finally {
       setActiveBatch("");
       setEnrichmentRunning(false);
+      setStopRequested(false);
     }
   };
 
   const importMarvelBatch = async () => {
     if (!supabase || !user || running || testing || enrichmentRunning || marvelRunning || !marvelHasMore) return;
     setMarvelRunning(true);
+    setStopRequested(false);
+    stopRef.current = false;
     setError("");
-    setActiveBatch("Marvel Universe · " + (marvelOffset + 1) + " onward");
+    let cursor = marvelOffset;
+    let hasMore = marvelHasMore;
+    let batches = 0;
     try {
-      const data = await runResearchBatch("import_marvel_batch", { offset: marvelOffset, limit: 3 });
-      setMarvelOffset(data.next_offset || marvelOffset);
-      setMarvelHasMore(Boolean(data.has_more));
-      const summary = (data.results || []).map(item =>
-        item.name + (item.skipped
-          ? " — skipped: " + (item.reason || "Import unavailable")
-          : " — " + (item.image?.imported ? "licensed image queued" : "image unavailable") +
-            ", " + (item.evidence_created || 0) + " feat candidates")
-      ).join(" · ");
+      while (hasMore && !stopRef.current) {
+        setActiveBatch("Marvel Universe · records " + (cursor + 1) + " onward");
+        const data = await runResearchBatch("import_marvel_batch", { offset: cursor, limit: 3 });
+        const batchStart = cursor;
+        cursor = Number.isInteger(data.next_offset) ? data.next_offset : cursor + Number(data.candidates || 0);
+        hasMore = Boolean(data.has_more);
+        setMarvelOffset(cursor);
+        setMarvelHasMore(hasMore);
+        const summary = (data.results || []).map(item =>
+          item.name + (item.skipped
+            ? " — skipped: " + (item.reason || "Import unavailable")
+            : " — " + (item.image?.imported ? "licensed image queued" : "image unavailable") +
+              ", " + (item.evidence_created || 0) + " feat candidates")
+        ).join(" · ");
+        addLog({
+          source: "MARVEL UNIVERSE",
+          page: "offset " + batchStart,
+          imported: data.imported || 0,
+          skipped: data.skipped || 0,
+          failed: 0,
+          candidates: data.candidates || 0,
+          message: summary || "No Marvel character candidates were returned."
+        });
+        batches++;
+        if (!data.candidates || batches % 5 === 0) await refreshCounts();
+      }
+      await refreshCounts();
       addLog({
         source: "MARVEL UNIVERSE",
-        page: "offset " + marvelOffset,
-        imported: data.imported || 0,
-        skipped: data.skipped || 0,
-        failed: 0,
-        candidates: data.candidates || 0,
-        message: summary || "No Marvel character candidates were returned."
+        page: stopRef.current ? "paused" : "complete",
+        imported: 0, skipped: 0, failed: 0, candidates: 0,
+        message: stopRef.current
+          ? "Paused after offset " + cursor + ". Progress is saved on this device; press continue to resume."
+          : "Wikidata returned no more indexed Marvel character identities for this query."
       });
-      await refreshCounts();
     } catch (batchError) {
-      setError(batchError?.message || "Marvel import failed.");
+      setError(batchError?.message || "Marvel import failed. Resume from the saved cursor.");
     } finally {
       setActiveBatch("");
       setMarvelRunning(false);
+      setStopRequested(false);
     }
   };
 
@@ -335,7 +398,7 @@ export default function CatalogImportPage() {
               <button type="button" className="atlas-button atlas-button--outline" onClick={() => testSource("dc")} disabled={running || testing || enrichmentRunning || marvelRunning}>{testing ? "Testing…" : "Test DC page 1"}</button>
               <button type="button" className="atlas-button atlas-button--outline" onClick={() => testSource("one_piece")} disabled={running || testing || enrichmentRunning || marvelRunning}>{testing ? "Testing…" : "Test ONE PIECE page 1"}</button>
             </>}
-            {running && <button type="button" className="atlas-button atlas-button--outline" onClick={requestStop}><Pause size={15}/> Stop after this batch</button>}
+            {(running || enrichmentRunning || marvelRunning) && <button type="button" className="atlas-button atlas-button--outline" onClick={requestStop}><Pause size={15}/> Stop after current batch</button>}
             <button type="button" className="catalog-refresh-button" disabled={running || testing || loadingCounts} onClick={() => refreshCounts().catch(loadError => setError(loadError.message))}><RefreshCw size={15}/> Refresh totals</button>
           </div>
         </div>
@@ -384,10 +447,10 @@ export default function CatalogImportPage() {
             <button type="button" className="atlas-button atlas-button--dark" onClick={enrichExistingBatch}
               disabled={running || testing || enrichmentRunning || marvelRunning || !enrichmentHasMore}>
               {enrichmentRunning ? <LoaderCircle className="catalog-spin" size={16}/> : <RefreshCw size={16}/>}
-              {enrichmentRunning ? "Enriching…" : enrichmentHasMore ? "Enrich next 3 existing characters" : "Existing scan complete"}
+              {enrichmentRunning ? "Enriching…" : enrichmentHasMore ? "Enrich all remaining characters" : "Existing scan complete"}
             </button>
           ) : <Link className="atlas-button atlas-button--dark" to="/auth/sign-in">Sign in to enrich</Link>}
-          <small>Progress cursor: {enrichmentOffset.toLocaleString()} · no ambiguous identity matches are attached</small>
+          <small>Saved progress: {enrichmentOffset.toLocaleString()} characters · no ambiguous identity matches are attached</small>
         </article>
         <article>
           <span className="section-kicker">NEW UNIVERSE / MARVEL</span>
@@ -397,10 +460,10 @@ export default function CatalogImportPage() {
             <button type="button" className="atlas-button atlas-button--dark" onClick={importMarvelBatch}
               disabled={running || testing || enrichmentRunning || marvelRunning || !marvelHasMore}>
               {marvelRunning ? <LoaderCircle className="catalog-spin" size={16}/> : <Download size={16}/>}
-              {marvelRunning ? "Importing Marvel…" : marvelHasMore ? "Import next 3 Marvel characters" : "Marvel index exhausted"}
+              {marvelRunning ? "Importing Marvel…" : marvelHasMore ? "Import full Marvel character index" : "Marvel index exhausted"}
             </button>
           ) : <Link className="atlas-button atlas-button--dark" to="/auth/sign-in">Sign in to import Marvel</Link>}
-          <small>Progress cursor: {marvelOffset.toLocaleString()} · main Marvel Comics universe; exact continuity unresolved</small>
+          <small>Saved progress: {marvelOffset.toLocaleString()} characters · main Marvel Comics universe; exact continuity unresolved</small>
         </article>
       </section>
 
