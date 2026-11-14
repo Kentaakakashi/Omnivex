@@ -59,6 +59,15 @@ export function AuthProvider({ children }) {
       if (error) throw error;
       return data;
     },
+    async signInWithGoogle() {
+      if (!supabase) throw new Error("Supabase publishable key is missing.");
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: `${window.location.origin}/auth/callback` }
+      });
+      if (error) throw error;
+      return data;
+    },
     async signOut() {
       if (!supabase) return;
       const { error } = await supabase.auth.signOut();
