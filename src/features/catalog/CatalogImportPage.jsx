@@ -11,6 +11,7 @@ export default function CatalogImportPage() {
   const [counts, setCounts] = useState({ entities: 0, profiles: 0, facts: 0 });
   const [loadingCounts, setLoadingCounts] = useState(true);
   const [running, setRunning] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [stopRequested, setStopRequested] = useState(false);
   const [activeBatch, setActiveBatch] = useState("");
   const [logs, setLogs] = useState([]);
@@ -49,9 +50,9 @@ export default function CatalogImportPage() {
     setLogs(old => [...old.slice(-11), { id: Date.now() + Math.random(), ...item }]);
   };
 
-  const runPage = async (source, page) => {
+  const runPage = async (source, page, dryRun = false) => {
     const { data, error: invokeError } = await supabase.functions.invoke("omnivex-research", {
-      body: { action: "official_catalog_page", source, page }
+      body: { action: "official_catalog_page", source, page, dryRun }
     });
     if (invokeError) {
       let detail = invokeError.message || "Official catalog import request failed.";
@@ -73,6 +74,21 @@ export default function CatalogImportPage() {
       throw new Error(detail);
     }
     if (!data || data.error) throw new Error(data?.error || "The catalog importer returned no data.");
+    if (dryRun) {
+      const sampleText = (data.sample || []).map(item =>
+        (item.directory_name || "Unknown") + " -> " + (item.profile_heading || item.profile_title || item.error || "No profile heading")
+      ).join(" | ");
+      addLog({
+        source: source === "dc" ? "DC TEST" : "ONE PIECE TEST",
+        page,
+        imported: 0,
+        skipped: 0,
+        failed: (data.sample || []).filter(item => item.error).length,
+        candidates: data.directory_candidates || 0,
+        message: "Dry run only; 0 records written. Sample: " + (sampleText || "No profile samples returned.")
+      });
+      return data;
+    }
     addLog({
       source: source === "dc" ? "DC" : "ONE PIECE",
       page,
@@ -82,6 +98,19 @@ export default function CatalogImportPage() {
       candidates: data.candidates || 0
     });
     return data;
+  };
+
+  const testSource = async source => {
+    if (!supabase || !user || running || testing) return;
+    setTesting(true);
+    setError("");
+    try {
+      await runPage(source, 1, true);
+    } catch (testError) {
+      setError(testError?.message || "Catalog dry run failed.");
+    } finally {
+      setTesting(false);
+    }
   };
 
   const startImport = async () => {
@@ -154,15 +183,19 @@ export default function CatalogImportPage() {
           <p>Build the first 1,000 indexed identities from publisher-owned character directories, with source-linked profile facts and review states.</p>
           <div className="catalog-import-actions">
             {user ? (
-              <button type="button" className="atlas-button atlas-button--dark" onClick={startImport} disabled={running || loadingCounts}>
+              <button type="button" className="atlas-button atlas-button--dark" onClick={startImport} disabled={running || testing || loadingCounts}>
                 {running ? <LoaderCircle className="catalog-spin" size={16}/> : <Download size={16}/>}
                 {running ? "Import running…" : "Populate database to 1,000"}
               </button>
             ) : (
               <Link className="atlas-button atlas-button--dark" to="/auth/sign-in">Sign in to import</Link>
             )}
+            {user && <>
+              <button type="button" className="atlas-button atlas-button--outline" onClick={() => testSource("dc")} disabled={running || testing}>{testing ? "Testing…" : "Test DC page 1"}</button>
+              <button type="button" className="atlas-button atlas-button--outline" onClick={() => testSource("one_piece")} disabled={running || testing}>{testing ? "Testing…" : "Test ONE PIECE page 1"}</button>
+            </>}
             {running && <button type="button" className="atlas-button atlas-button--outline" onClick={requestStop}><Pause size={15}/> Stop after this batch</button>}
-            <button type="button" className="catalog-refresh-button" disabled={running || loadingCounts} onClick={() => refreshCounts().catch(loadError => setError(loadError.message))}><RefreshCw size={15}/> Refresh totals</button>
+            <button type="button" className="catalog-refresh-button" disabled={running || testing || loadingCounts} onClick={() => refreshCounts().catch(loadError => setError(loadError.message))}><RefreshCw size={15}/> Refresh totals</button>
           </div>
         </div>
         <div className="catalog-import-mark"><Database size={34}/><strong>1K</strong><span>IDENTITY TARGET</span></div>
