@@ -1582,22 +1582,18 @@ async function enrichExistingEntity(client: any, user: any, entityId: string) {
   const version = await getOrCreatePrimaryVersion(client, user.id, entity);
   const enrichment = await persistWikidataEnrichment(client, user, entity, version, selected.providerId, "wikidata_lore");
 
-  // Also analyze eligible publisher and encyclopedia sources already linked to this entity.
-  const { data: existingLinks, error: linkError } = await client.from("entity_source_links")
-    .select("source_record_id").eq("entity_id", entity.id);
-  if (linkError) throw new Error("Could not load the entity's existing source references.");
+  // Only analyze sources resolved from this exact Wikidata identity.
+  // Legacy entity-source links may be incorrectly merged and must not be treated as character evidence.
   const sourceIds = Array.from(new Set([
     enrichment.official_profile_source_id,
-    ...(existingProfiles || []).map((profile: any) => profile.source_record_id),
-    ...(existingLinks || []).map((link: any) => link.source_record_id),
     enrichment.wikipedia_source_id
   ].filter(Boolean)));
   let researchSources: any[] = [];
   if (sourceIds.length) {
     const { data: rows, error: sourceError } = await client.from("source_records")
       .select("id,url,source_type,publisher_or_host").in("id", sourceIds);
-    if (sourceError) throw new Error("Could not load existing research source details.");
-    const researchDomains = ["marvel.com", "dc.com", "one-piece.com", "wikipedia.org"];
+    if (sourceError) throw new Error("Could not load exact-identity research source details.");
+    const researchDomains = ["marvel.com", "wikipedia.org"];
     researchSources = (rows || []).filter((row: any) => {
       try {
         const host = new URL(row.url).hostname.toLowerCase();
