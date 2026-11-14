@@ -1355,6 +1355,15 @@ async function importCommonsArtwork(client: any, user: any, entity: any, version
   if (!info?.url) return { imported: false, reason: "Commons file has no usable image URL." };
 
   const licenseName = htmlToText(metadata.LicenseShortName?.value || "");
+  const visualDescription = [
+    page.title,
+    metadata.ImageDescription?.value,
+    metadata.ObjectName?.value,
+    metadata.Credit?.value
+  ].map((value: any) => htmlToText(String(value || ""))).join(" ").toLowerCase();
+  if (/(cosplay|statue|wax figure|figurine|action figure|toy photo|toy figure|collectible|museum display|person dressed as|costume photo)/i.test(visualDescription)) {
+    return { imported: false, reason: "The Commons file appears to depict cosplay, a statue, toy or collectible rather than character artwork." };
+  }
   const usageBasis = commonsLicenseBasis(licenseName);
   if (!usageBasis) return { imported: false, reason: "Commons file has no recognized public-domain or Creative Commons license." };
 
@@ -1614,6 +1623,19 @@ async function importMarvelCharacter(client: any, user: any, universe: any, cand
   if (lookupError) throw new Error("Could not check Marvel identity " + itemId + ".");
   let existing = slugExisting || null;
 
+  // These Wikidata IDs identify the two Marvel identities already seeded in this database.
+  const seededMarvelSlugs: Record<string, string> = {
+    Q79037: "spider-man-peter-parker",
+    Q180704: "iron-man-tony-stark"
+  };
+  if (!existing && seededMarvelSlugs[itemId]) {
+    const { data: seeded, error: seededError } = await client.from("entities")
+      .select("id,slug,name,entity_type,primary_universe_id,short_description,status")
+      .eq("slug", seededMarvelSlugs[itemId]).eq("primary_universe_id", universe.id).maybeSingle();
+    if (seededError) throw new Error("Could not match the pre-indexed Marvel identity.");
+    existing = seeded || null;
+  }
+
   // Reuse a pre-indexed Marvel identity only when its first-party profile URL matches exactly.
   if (!existing && candidate.officialPageUrl) {
     let normalizedUrl = candidate.officialPageUrl;
@@ -1690,13 +1712,14 @@ async function importMarvelBatch(client: any, user: any, offset: number, limit: 
     throw new Error("Marvel import accepts a batch size of 1–3 characters to keep source and research calls bounded.");
   }
   const sparql = [
-    "SELECT DISTINCT ?item ?itemLabel ?itemDescription ?image ?article ?officialPage WHERE {",
+    "SELECT ?item ?itemLabel ?itemDescription (SAMPLE(?image) AS ?image) (SAMPLE(?article) AS ?article) (SAMPLE(?officialPage) AS ?officialPage) WHERE {",
     "  ?item wdt:P1080 wd:Q931597; wdt:P31/wdt:P279* wd:Q95074.",
     "  OPTIONAL { ?item wdt:P18 ?image. }",
     "  OPTIONAL { ?article schema:about ?item; schema:isPartOf <https://en.wikipedia.org/>. }",
     "  OPTIONAL { ?item wdt:P856 ?officialPage. }",
     "  SERVICE wikibase:label { bd:serviceParam wikibase:language \"en\". }",
     "}",
+    "GROUP BY ?item ?itemLabel ?itemDescription",
     "ORDER BY LCASE(STR(?itemLabel))",
     "LIMIT " + limit,
     "OFFSET " + offset
