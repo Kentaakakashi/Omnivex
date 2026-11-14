@@ -386,14 +386,7 @@ export default function CatalogImportPage() {
           <h1>Official character catalog</h1>
           <p>Import complete publisher-owned character directories in bounded batches, with source-linked profile facts and review states.</p>
           <div className="catalog-import-actions">
-            {user ? (
-              <button type="button" className="atlas-button atlas-button--dark" onClick={startImport} disabled={running || testing || enrichmentRunning || marvelRunning || loadingCounts}>
-                {running ? <LoaderCircle className="catalog-spin" size={16}/> : <Download size={16}/>}
-                {running ? "Import running…" : "Import full official catalog"}
-              </button>
-            ) : (
-              <Link className="atlas-button atlas-button--dark" to="/auth/sign-in">Sign in to import</Link>
-            )}
+            <p className="platform-notice">Legacy DC / ONE PIECE bulk import is paused while the old source-to-character links are repaired. Use the enrichment and Marvel scan controls below.</p>
             {user && <>
               <button type="button" className="atlas-button atlas-button--outline" onClick={() => testSource("dc")} disabled={running || testing || enrichmentRunning || marvelRunning}>{testing ? "Testing…" : "Test DC page 1"}</button>
               <button type="button" className="atlas-button atlas-button--outline" onClick={() => testSource("one_piece")} disabled={running || testing || enrichmentRunning || marvelRunning}>{testing ? "Testing…" : "Test ONE PIECE page 1"}</button>
