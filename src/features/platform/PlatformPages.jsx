@@ -85,7 +85,7 @@ function RecordCard({ record, type = "entity", to }) {
   const imageAllowed = Boolean(
     record.artwork_url &&
     record.artwork_source_url &&
-    record.artwork_approval_status === "approved" &&
+    (record.artwork_approval_status === "approved" || record.artwork_visible_to_owner === true) &&
     ["public_domain", "cc0", "cc_by", "cc_by_sa", "licensed", "publisher_authorized", "user_owned"]
       .includes(record.artwork_use_basis)
   );
@@ -106,6 +106,14 @@ function RecordCard({ record, type = "entity", to }) {
         <div>
           <strong>{title}</strong>
           {description && <p>{description}</p>}
+          {(record.fact_count > 0 || record.feat_count > 0) && (
+            <small className="platform-record-card__research-meta">
+              {record.fact_count > 0 ? record.fact_count + " sourced details" : ""}
+              {record.fact_count > 0 && record.feat_count > 0 ? " · " : ""}
+              {record.feat_count > 0 ? record.feat_count + " feat candidates" : ""}
+            </small>
+          )}
+          {record.artwork_visible_to_owner && <small className="platform-record-card__research-meta">Your image submission · review pending</small>}
         </div>
         <span className="platform-record-card__meta">{record.entity_type || record.category || record.status || "INDEXED"} <ArrowUpRight size={15} /></span>
       </div>
@@ -149,16 +157,19 @@ export function ExplorePage() {
   const { rows: universes, loading: universesLoading, error: universeError } = useRows("universes", "created_at", 120);
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const activeTab = useActiveTab("all");
   const [search, setSearch] = useState(new URLSearchParams(location.search).get("q") || "");
   const [sort, setSort] = useState("recent");
   const [mediaByEntity, setMediaByEntity] = useState({});
   const [aliasesByEntity, setAliasesByEntity] = useState({});
+  const [researchByEntity, setResearchByEntity] = useState({});
   useEffect(() => {
     let active = true;
     if (!supabase || !entities.length) {
       setMediaByEntity({});
       setAliasesByEntity({});
+      setResearchByEntity({});
       return () => { active = false; };
     }
     (async () => {
@@ -175,9 +186,12 @@ export function ExplorePage() {
       if (!versions.length) { if (active) setMediaByEntity({}); return; }
       const versionToEntity = new Map(versions.map(item => [item.id, item.entity_id]));
       const { data: mediaRows } = await supabase.from("entity_media")
-        .select("entity_version_id,asset_url,source_url,usage_basis,approval_status,is_primary,alt_text")
+        .select("entity_version_id,asset_url,source_url,usage_basis,approval_status,is_primary,alt_text,submitted_by")
         .in("entity_version_id", versions.map(item => item.id))
-        .eq("approval_status", "approved").eq("is_primary", true);
+        .or(user?.id
+          ? "approval_status.eq.approved,and(approval_status.eq.submitted,submitted_by.eq." + user.id + ")"
+          : "approval_status.eq.approved")
+        .eq("is_primary", true);
       if (!active) return;
       const mediaMap = {};
       (mediaRows || []).forEach(item => {
@@ -188,14 +202,67 @@ export function ExplorePage() {
             artwork_source_url: item.source_url,
             artwork_use_basis: item.usage_basis,
             artwork_approval_status: item.approval_status,
-            artwork_alt_text: item.alt_text
+            artwork_alt_text: item.alt_text,
+            artwork_visible_to_owner: item.approval_status === "submitted" && item.submitted_by === user?.id
           };
         }
       });
       setMediaByEntity(mediaMap);
     })();
     return () => { active = false; };
+  }, [entities, user?.id]);
+  useEffect(() => {
+    let active = true;
+    if (!supabase || !entities.length) {
+      setResearchByEntity({});
+      return () => { active = false; };
+    }
+    (async () => {
+      const entityIds = entities.map(item => item.id);
+      const [factResult, versionResult] = await Promise.all([
+        supabase.from("entity_profile_facts")
+          .select("entity_id,fact_key,fact_value")
+          .in("entity_id", entityIds),
+        supabase.from("entity_versions")
+          .select("id,entity_id")
+          .in("entity_id", entityIds)
+      ]);
+      if (!active) return;
+      const factRows = factResult.data || [];
+      const versions = versionResult.data || [];
+      const versionToEntity = new Map(versions.map(item => [item.id, item.entity_id]));
+      let evidenceRows = [];
+      if (versions.length) {
+        const { data } = await supabase.from("evidence_records")
+          .select("id,entity_version_id")
+          .in("entity_version_id", versions.map(item => item.id));
+        evidenceRows = data || [];
+      }
+      if (!active) return;
+      const byEntity = {};
+      for (const id of entityIds) byEntity[id] = { fact_count: 0, feat_count: 0, lore_preview: "" };
+      for (const fact of factRows) {
+        const record = byEntity[fact.entity_id];
+        if (!record) continue;
+        record.fact_count++;
+        const raw = fact.fact_value?.value ?? fact.fact_value;
+        const value = typeof raw === "string" ? raw : "";
+        if (!record.lore_preview && value && [
+          "official_summary_excerpt", "encyclopedia_lore_summary",
+          "wikidata_description", "official_bio", "bio", "story_summary"
+        ].includes(fact.fact_key)) {
+          record.lore_preview = value.slice(0, 190);
+        }
+      }
+      for (const evidence of evidenceRows) {
+        const entityId = versionToEntity.get(evidence.entity_version_id);
+        if (entityId && byEntity[entityId]) byEntity[entityId].feat_count++;
+      }
+      setResearchByEntity(byEntity);
+    })();
+    return () => { active = false; };
   }, [entities]);
+
   const tabs = [
     { value: "all", label: "Everything" },
     { value: "characters", label: "Characters" },
@@ -297,7 +364,7 @@ export function ExplorePage() {
               </div>
               {filteredEntities.length ? (
                 <div className="platform-card-grid">
-                  {filteredEntities.map(item => <RecordCard key={item.id} record={{ ...item, ...(mediaByEntity[item.id] || {}) }} type={(item.entity_type || "ENTITY").toUpperCase()} to={String(item.entity_type || "").toLowerCase().includes("character") ? "/character/" + item.slug : "/entity/" + item.slug} />)}
+                  {filteredEntities.map(item => <RecordCard key={item.id} record={{ ...item, ...(mediaByEntity[item.id] || {}), ...(researchByEntity[item.id] || {}) }} type={(item.entity_type || "ENTITY").toUpperCase()} to={String(item.entity_type || "").toLowerCase().includes("character") ? "/character/" + item.slug : "/entity/" + item.slug} />)}
                 </div>
               ) : <EmptyState title={entities.length ? "No records match those filters" : "The index is waiting for its first records"} body={entities.length ? "Try another search term or select Everything." : "The catalogue will populate when real entity and version records are added. The preview does not invent character profiles."} />}
             </section>
