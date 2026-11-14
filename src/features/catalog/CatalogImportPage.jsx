@@ -20,7 +20,7 @@ export default function CatalogImportPage() {
   const refreshCounts = async () => {
     if (!supabase) return null;
     const [entities, profiles, facts] = await Promise.all([
-      supabase.from("entities").select("id", { count: "exact", head: true }),
+      supabase.from("entities").select("id", { count: "exact", head: true }).eq("entity_type", "character"),
       supabase.from("entity_profiles").select("id", { count: "exact", head: true }),
       supabase.from("entity_profile_facts").select("id", { count: "exact", head: true })
     ]);
@@ -53,7 +53,7 @@ export default function CatalogImportPage() {
     const { data, error: invokeError } = await supabase.functions.invoke("omnivex-research", {
       body: { action: "official_catalog_page", source, page }
     });
-    if (invokeError) throw new Error(invokeError.message || "Official catalog import request failed.");
+    if (invokeError) {\n      let detail = invokeError.message || "Official catalog import request failed.";\n      try { const payload = await invokeError.context?.json?.(); if (payload?.error) detail = payload.error; } catch {}\n      throw new Error(detail);\n    }
     if (!data || data.error) throw new Error(data?.error || "The catalog importer returned no data.");
     addLog({
       source: source === "dc" ? "DC" : "ONE PIECE",
@@ -77,13 +77,13 @@ export default function CatalogImportPage() {
     try {
       totals = await refreshCounts();
       if ((totals?.entities || 0) >= TARGET_ENTITY_COUNT) {
-        addLog({ source: "Catalog", page: "complete", imported: 0, skipped: 0, failed: 0, candidates: 0, message: "The database already contains at least 1,000 character/entity records." });
+        addLog({ source: "Catalog", page: "complete", imported: 0, skipped: 0, failed: 0, candidates: 0, message: "The database already contains at least 1,000 character records." });
         return;
       }
 
       const sources = [
         { key: "dc", label: "DC", pages: Array.from({ length: 13 }, (_, index) => index + 1) },
-        { key: "one_piece", label: "ONE PIECE", pages: Array.from({ length: 42 }, (_, index) => index) }
+        { key: "one_piece", label: "ONE PIECE", pages: Array.from({ length: 42 }, (_, index) => index + 1) }
       ];
 
       for (const source of sources) {
@@ -104,7 +104,7 @@ export default function CatalogImportPage() {
 
       totals = await refreshCounts();
       if ((totals?.entities || 0) >= TARGET_ENTITY_COUNT) {
-        addLog({ source: "Catalog", page: "complete", imported: 0, skipped: 0, failed: 0, candidates: 0, message: "Target reached: " + totals.entities.toLocaleString() + " indexed entities." });
+        addLog({ source: "Catalog", page: "complete", imported: 0, skipped: 0, failed: 0, candidates: 0, message: "Target reached: " + totals.entities.toLocaleString() + " indexed characters." });
       } else if (stopRef.current) {
         addLog({ source: "Catalog", page: "paused", imported: 0, skipped: 0, failed: 0, candidates: 0, message: "Paused by you. Run again to continue; existing profiles are deduplicated." });
       } else {
@@ -154,7 +154,7 @@ export default function CatalogImportPage() {
       {error && <p className="platform-notice platform-notice--error"><AlertTriangle size={15}/> {error}</p>}
 
       <section className="catalog-import-stats">
-        <article><span>CHARACTER / ENTITY RECORDS</span><strong>{loadingCounts ? "—" : counts.entities.toLocaleString()}</strong><small>Target: 1,000 total records</small></article>
+        <article><span>CHARACTER RECORDS</span><strong>{loadingCounts ? "—" : counts.entities.toLocaleString()}</strong><small>Target: 1,000 character records</small></article>
         <article><span>OFFICIAL PROFILE RECORDS</span><strong>{loadingCounts ? "—" : counts.profiles.toLocaleString()}</strong><small>Separate source-specific profiles</small></article>
         <article><span>FIELD-LEVEL FACTS</span><strong>{loadingCounts ? "—" : counts.facts.toLocaleString()}</strong><small>Each fact links to a source record</small></article>
       </section>
