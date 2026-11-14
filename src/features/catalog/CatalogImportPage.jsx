@@ -53,7 +53,7 @@ export default function CatalogImportPage() {
     const { data, error: invokeError } = await supabase.functions.invoke("omnivex-research", {
       body: { action: "official_catalog_page", source, page }
     });
-    if (invokeError) {\n      let detail = invokeError.message || "Official catalog import request failed.";\n      try { const payload = await invokeError.context?.json?.(); if (payload?.error) detail = payload.error; } catch {}\n      throw new Error(detail);\n    }
+    if (invokeError) {\n      let detail = invokeError.message || "Official catalog import request failed.";\n      const response = invokeError.context;\n      if (response && typeof response.clone === "function") {\n        try {\n          const raw = await response.clone().text();\n          if (raw) {\n            try {\n              const payload = JSON.parse(raw);\n              if (payload?.error) detail = payload.error;\n              else detail = raw.slice(0, 500);\n            } catch {\n              detail = raw.slice(0, 500);\n            }\n          }\n        } catch {}\n      }\n      throw new Error(detail);\n    }
     if (!data || data.error) throw new Error(data?.error || "The catalog importer returned no data.");
     addLog({
       source: source === "dc" ? "DC" : "ONE PIECE",
