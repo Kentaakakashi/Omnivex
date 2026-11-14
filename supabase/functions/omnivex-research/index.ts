@@ -861,7 +861,7 @@ function parseDcDirectory(html: string) : OfficialCandidate[] {
     try { parsed = new URL(href, "https://www.dc.com"); } catch { continue; }
     if (parsed.hostname !== "www.dc.com" && parsed.hostname !== "dc.com") continue;
     const pathMatch = parsed.pathname.match(/^\/characters\/([a-z0-9-]+)\/?$/i);
-    if (!pathMatch || !parsed.searchParams.has("id")) continue;
+    if (!pathMatch) continue;
     const inner = match[2] || "";
     const image = inner.match(/<img\b([^>]*)>/i);
     const name = cleanText(
@@ -886,7 +886,7 @@ function parseOnePieceDirectory(html: string) : OfficialCandidate[] {
     let parsed: URL;
     try { parsed = new URL(href, "https://one-piece.com"); } catch { continue; }
     if (parsed.hostname !== "one-piece.com" && parsed.hostname !== "www.one-piece.com") continue;
-    const pathMatch = parsed.pathname.match(/^\/character\/([a-z0-9_-]+)\/index\.html$/i);
+    const pathMatch = parsed.pathname.match(/^\/character\/([a-z0-9_-]+)(?:\/index\.html|\/)?$/i);
     if (!pathMatch || ["index", "syllabary"].includes(pathMatch[1].toLowerCase())) continue;
     const inner = match[2] || "";
     const image = inner.match(/<img\b([^>]*)>/i);
@@ -1165,7 +1165,7 @@ async function importOfficialCatalogPage(client: any, user: any, sourceKey: stri
     directoryHtml = await fetchOfficialHtml(directoryUrl, "dc.com");
     candidates = parseDcDirectory(directoryHtml);
   } else if (sourceKey === "one_piece") {
-    if (page > 41) throw new Error("ONE PIECE official character directory pages are numbered 0 through 41.");
+    if (page < 1 || page > 42) throw new Error("ONE PIECE official character directory pages are numbered 1 through 42.");
     directoryUrl = "https://one-piece.com/character/syllabary/index.html?page=" + page;
     directoryHtml = await fetchOfficialHtml(directoryUrl, "one-piece.com");
     candidates = parseOnePieceDirectory(directoryHtml);
@@ -1173,7 +1173,19 @@ async function importOfficialCatalogPage(client: any, user: any, sourceKey: stri
     throw new Error("Unsupported official catalog source.");
   }
   if (!candidates.length) {
-    return { source: sourceKey, page, directory_url: directoryUrl, candidates: 0, imported: 0, skipped: 0, failed: 0, errors: [], done: true };
+    const title = firstTagText(directoryHtml, "title") || metaContent(directoryHtml, "og:title") || "";
+    const linkCount = (directoryHtml.match(/<a\\b/gi) || []).length;
+    const expectedPathHits = sourceKey === "dc"
+      ? (directoryHtml.match(/\\/characters\\/[a-z0-9-]+/gi) || []).length
+      : (directoryHtml.match(/\\/character\\/[a-z0-9_-]+/gi) || []).length;
+    throw new Error(
+      "Official directory parser found zero character links (page " + page +
+      "; HTML bytes " + directoryHtml.length +
+      "; anchors " + linkCount +
+      "; matching path fragments " + expectedPathHits +
+      "; page title " + (title || "unavailable") +
+      "). The page layout or upstream response may have changed; no records were inserted."
+    );
   }
 
   const [{ data: existingEntities, error: entityListError }, { data: existingAliases, error: aliasListError }] = await Promise.all([
