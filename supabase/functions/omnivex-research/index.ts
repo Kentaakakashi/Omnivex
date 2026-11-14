@@ -1565,7 +1565,13 @@ async function enrichExistingEntity(client: any, user: any, entityId: string) {
   const titleFromOfficial = cleanText(onePieceProfile?.profile_data?.identity?.official_page_title || "", 220).split(" | ")[0];
   const queryNames = addUniqueText([entity.name, titleFromOfficial, onePieceProfile?.official_profile_url?.split("/").filter(Boolean).pop()], 3);
   let selected: any = null;
-  for (const query of queryNames) {
+  const seededMarvelQids: Record<string, string> = {
+    "spider-man-peter-parker": "Q79037",
+    "iron-man-tony-stark": "Q180704"
+  };
+  const seededMarvelQid = seededMarvelQids[entity.slug];
+  if (seededMarvelQid) selected = { providerId: seededMarvelQid, name: entity.name };
+  for (const query of selected ? [] : queryNames) {
     const language = /[^\\u0000-\\u007f]/.test(query) ? "ja" : "en";
     const results = await searchWikidata(query, language);
     const exact = results.filter((result: any) => canonicalNameKey(result.name) === canonicalNameKey(query));
@@ -1575,9 +1581,34 @@ async function enrichExistingEntity(client: any, user: any, entityId: string) {
 
   const version = await getOrCreatePrimaryVersion(client, user.id, entity);
   const enrichment = await persistWikidataEnrichment(client, user, entity, version, selected.providerId, "wikidata_lore");
+
+  // Also analyze eligible publisher and encyclopedia sources already linked to this entity.
+  const { data: existingLinks, error: linkError } = await client.from("entity_source_links")
+    .select("source_record_id").eq("entity_id", entity.id);
+  if (linkError) throw new Error("Could not load the entity's existing source references.");
+  const sourceIds = Array.from(new Set([
+    enrichment.official_profile_source_id,
+    ...(existingProfiles || []).map((profile: any) => profile.source_record_id),
+    ...(existingLinks || []).map((link: any) => link.source_record_id),
+    enrichment.wikipedia_source_id
+  ].filter(Boolean)));
+  let researchSources: any[] = [];
+  if (sourceIds.length) {
+    const { data: rows, error: sourceError } = await client.from("source_records")
+      .select("id,url,source_type,publisher_or_host").in("id", sourceIds);
+    if (sourceError) throw new Error("Could not load existing research source details.");
+    const researchDomains = ["marvel.com", "dc.com", "one-piece.com", "wikipedia.org"];
+    researchSources = (rows || []).filter((row: any) => {
+      try {
+        const host = new URL(row.url).hostname.toLowerCase();
+        return researchDomains.some(domain => host === domain || host.endsWith("." + domain));
+      } catch (_error) { return false; }
+    }).slice(0, 2);
+  }
+
   const researchResults: any[] = [];
-  for (const sourceId of [enrichment.official_profile_source_id, enrichment.wikipedia_source_id].filter(Boolean)) {
-    try { researchResults.push(await analyseSource(client, user, sourceId, version.id)); }
+  for (const source of researchSources) {
+    try { researchResults.push(await analyseSource(client, user, source.id, version.id)); }
     catch (error) { researchResults.push({ status: "not_analyzed", reason: cleanText(error instanceof Error ? error.message : "Lore analysis unavailable.", 220) }); }
   }
   return {
