@@ -1416,7 +1416,7 @@ async function persistWikidataEnrichment(client: any, user: any, entity: any, ve
   const firstAppearanceIds = wikidataClaimValues(item, "P4584").map((value: any) => value?.id).filter(Boolean);
   const narrativeUniverseIds = wikidataClaimValues(item, "P1080").map((value: any) => value?.id).filter(Boolean);
   const occupationIds = wikidataClaimValues(item, "P106").map((value: any) => value?.id).filter(Boolean);
-  const speciesIds = wikidataClaimValues(item, "P species").map((value: any) => value?.id).filter(Boolean);
+  const speciesIds = wikidataClaimValues(item, "P171").map((value: any) => value?.id).filter(Boolean);
   const referencedIds = addUniqueText([...creatorIds, ...firstAppearanceIds, ...narrativeUniverseIds, ...occupationIds], 20);
   let referenceLabels: Record<string, string> = {};
   if (referencedIds.length) {
@@ -1613,12 +1613,12 @@ async function importMarvelBatch(client: any, user: any, offset: number, limit: 
     "  ?item wdt:P1080 wd:Q931597; wdt:P31/wdt:P279* wd:Q95074.",
     "  OPTIONAL { ?item wdt:P18 ?image. }",
     "  OPTIONAL { ?article schema:about ?item; schema:isPartOf <https://en.wikipedia.org/>. }",
-    "  SERVICE wikibase:label { bd:serviceParam wikibase:language \\"en\\". }",
+    "  SERVICE wikibase:label { bd:serviceParam wikibase:language \"en\". }",
     "}",
     "ORDER BY LCASE(STR(?itemLabel))",
     "LIMIT " + limit,
     "OFFSET " + offset
-  ].join("\\n");
+  ].join("\n");
   const params = new URLSearchParams({ query: sparql, format: "json" });
   const result = await fetchJson("https://query.wikidata.org/sparql?" + params.toString(), {
     "Accept": "application/sparql-results+json",
