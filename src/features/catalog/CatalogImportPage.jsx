@@ -113,6 +113,45 @@ export default function CatalogImportPage() {
     }
   };
 
+  const runBatch = async (source, pageStart, pageEnd) => {
+    const { data, error: invokeError } = await supabase.functions.invoke("omnivex-research", {
+      body: { action: "official_catalog_batch", source, pageStart, pageEnd }
+    });
+    if (invokeError) {
+      let detail = invokeError.message || "Official catalog batch request failed.";
+      const response = invokeError.context;
+      if (response && typeof response.clone === "function") {
+        try {
+          const raw = await response.clone().text();
+          if (raw) {
+            try {
+              const payload = JSON.parse(raw);
+              if (payload?.error) detail = payload.error;
+              else detail = raw.slice(0, 500);
+            } catch {
+              detail = raw.slice(0, 500);
+            }
+          }
+        } catch {}
+      }
+      throw new Error(detail);
+    }
+    if (!data || data.error) throw new Error(data?.error || "The catalog batch returned no data.");
+    addLog({
+      source: source === "dc" ? "DC" : "ONE PIECE",
+      page: pageStart === pageEnd ? pageStart : pageStart + "–" + pageEnd,
+      imported: data.imported || 0,
+      skipped: data.skipped || 0,
+      failed: data.failed || 0,
+      candidates: data.candidates || 0,
+      message: (data.pages || []).map(item =>
+        "Page " + item.page + ": " + (item.imported || 0) + " imported, " +
+        (item.skipped || 0) + " already indexed, " + (item.failed || 0) + " failed"
+      ).join(" · ")
+    });
+    return data;
+  };
+
   const startImport = async () => {
     if (!supabase || !user || running) return;
     setRunning(true);
@@ -120,42 +159,41 @@ export default function CatalogImportPage() {
     stopRef.current = false;
     setError("");
     setLogs([]);
-    let totals;
     try {
-      totals = await refreshCounts();
-      if ((totals?.entities || 0) >= TARGET_ENTITY_COUNT) {
-        addLog({ source: "Catalog", page: "complete", imported: 0, skipped: 0, failed: 0, candidates: 0, message: "The database already contains at least 1,000 character records." });
-        return;
-      }
-
+      await refreshCounts();
       const sources = [
-        { key: "dc", label: "DC", pages: Array.from({ length: 13 }, (_, index) => index + 1) },
-        { key: "one_piece", label: "ONE PIECE", pages: Array.from({ length: 42 }, (_, index) => index + 1) }
+        { key: "dc", label: "DC", lastPage: 13 },
+        { key: "one_piece", label: "ONE PIECE", lastPage: 42 }
       ];
 
+      // Each request handles up to three directory pages; two pages are fetched concurrently server-side.
       for (const source of sources) {
-        for (const page of source.pages) {
+        for (let pageStart = 1; pageStart <= source.lastPage; pageStart += 3) {
           if (stopRef.current) break;
-          totals = await refreshCounts();
-          if ((totals?.entities || 0) >= TARGET_ENTITY_COUNT) break;
-          setActiveBatch(source.label + " · page " + page);
-          const result = await runPage(source.key, page);
-          totals = await refreshCounts();
+          const pageEnd = Math.min(source.lastPage, pageStart + 2);
+          setActiveBatch(source.label + " · pages " + pageStart + "–" + pageEnd);
+          const result = await runBatch(source.key, pageStart, pageEnd);
           if (result.failed > 0 && result.imported === 0 && result.skipped === 0) {
-            throw new Error(source.label + " page " + page + " could not be imported. Check the page log and try again later.");
+            throw new Error(source.label + " pages " + pageStart + "–" + pageEnd + " could not be imported. Check the page log and retry.");
           }
+          await refreshCounts();
         }
-        totals = await refreshCounts();
-        if ((totals?.entities || 0) >= TARGET_ENTITY_COUNT || stopRef.current) break;
+        if (stopRef.current) break;
       }
 
-      totals = await refreshCounts();
-      if ((totals?.entities || 0) >= TARGET_ENTITY_COUNT) {
-        addLog({ source: "Catalog", page: "complete", imported: 0, skipped: 0, failed: 0, candidates: 0, message: "Target reached: " + totals.entities.toLocaleString() + " indexed characters." });
-      } else if (stopRef.current) {
-        addLog({ source: "Catalog", page: "paused", imported: 0, skipped: 0, failed: 0, candidates: 0, message: "Paused by you. Run again to continue; existing profiles are deduplicated." });
+      const totals = await refreshCounts();
+      if (stopRef.current) {
+        addLog({ source: "Catalog", page: "paused", imported: 0, skipped: 0, failed: 0, candidates: 0, message: "Paused by you. Run again to continue; existing profile URLs are checked before insertion." });
       } else {
-        addLog({ source: "Catalog", page: "sources-exhausted", imported: 0, skipped: 0, failed: 0, candidates: 0, message: "Available official directory pages were exhausted before the target was reached." });
+        addLog({
+          source: "Catalog",
+          page: "complete",
+          imported: 0,
+          skipped: 0,
+          failed: 0,
+          candidates: 0,
+          message: "All available official directory pages were processed. Current character-record count: " + (totals?.entities || 0).toLocaleString() + ". The 1K bar is a milestone, not a reason to stop before source coverage is complete."
+        });
       }
     } catch (runError) {
       setError(runError?.message || "The official character import stopped.");
@@ -180,12 +218,12 @@ export default function CatalogImportPage() {
         <div>
           <span className="section-kicker">OMNIVEX / DATA OPERATIONS</span>
           <h1>Official character catalog</h1>
-          <p>Build the first 1,000 indexed identities from publisher-owned character directories, with source-linked profile facts and review states.</p>
+          <p>Import complete publisher-owned character directories in bounded batches, with source-linked profile facts and review states.</p>
           <div className="catalog-import-actions">
             {user ? (
               <button type="button" className="atlas-button atlas-button--dark" onClick={startImport} disabled={running || testing || loadingCounts}>
                 {running ? <LoaderCircle className="catalog-spin" size={16}/> : <Download size={16}/>}
-                {running ? "Import running…" : "Populate database to 1,000"}
+                {running ? "Import running…" : "Import full official catalog"}
               </button>
             ) : (
               <Link className="atlas-button atlas-button--dark" to="/auth/sign-in">Sign in to import</Link>
