@@ -106,6 +106,7 @@ function RecordCard({ record, type = "entity", to }) {
         <div>
           <strong>{title}</strong>
           {description && <p>{description}</p>}
+          {record.lore_preview && <p className="platform-record-card__lore">{record.lore_preview}</p>}
           {(record.fact_count > 0 || record.feat_count > 0) && (
             <small className="platform-record-card__research-meta">
               {record.fact_count > 0 ? record.fact_count + " sourced details" : ""}
