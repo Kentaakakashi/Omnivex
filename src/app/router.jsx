@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router"
 import AppShell from "./layouts/AppShell.jsx";
 import HomePage from "../features/home/HomePage.jsx";
 import CharacterDetailPage from "../features/characters/CharacterDetailPage.jsx";
+import CatalogImportPage from "../features/catalog/CatalogImportPage.jsx";
 import AuthPage from "./pages/AuthPage.jsx";
 import { AuthProvider } from "./providers/AuthProvider.jsx";
 import { ToastProvider } from "./providers/ToastProvider.jsx";
@@ -55,6 +56,7 @@ export function AppRouter() {
               <Route index element={<HomePage/>}/>
 
               <Route path="explore" element={<ExplorePage/>}/>
+              <Route path="catalog-import" element={<CatalogImportPage/>}/>
               <Route path="character/:entitySlug" element={<CharacterDetailPage/>}/>
               <Route path="character/:entitySlug/versions/:versionSlug" element={<CharacterDetailPage/>}/>
               <Route path="entity/:entitySlug" element={<EntityDossierPage/>}/>
