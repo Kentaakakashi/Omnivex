@@ -5,7 +5,7 @@ import { useAuth } from "../providers/AuthProvider.jsx";
 import { useToast } from "../providers/ToastProvider.jsx";
 
 export default function AuthPage() {
-  const { configured, user, signIn, signUp, loading } = useAuth();
+  const { configured, user, signIn, signUp, signInWithGoogle, loading } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
   const location = useLocation();
@@ -15,6 +15,7 @@ export default function AuthPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [error, setError] = useState("");
 
   const submit = async event => {
@@ -38,6 +39,17 @@ export default function AuthPage() {
       setError(err?.message || "Authentication failed. Please try again.");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const continueWithGoogle = async () => {
+    setError("");
+    setGoogleBusy(true);
+    try {
+      await signInWithGoogle();
+    } catch (err) {
+      setError(err?.message || "Google sign-in is unavailable right now.");
+      setGoogleBusy(false);
     }
   };
 
@@ -88,6 +100,13 @@ export default function AuthPage() {
             <p className="auth-terms">By continuing, you agree to use the community respectfully and cite sources for factual claims.</p>
           </form>
         )}
+        {configured && <div className="auth-google-wrap">
+          <div className="auth-google-divider"><span>OR CONTINUE WITH</span></div>
+          <button className="auth-google" type="button" onClick={continueWithGoogle} disabled={googleBusy || busy}>
+            <span className="auth-google-mark" aria-hidden="true">G</span>
+            {googleBusy ? "Connecting to Google…" : "Continue with Google"}
+          </button>
+        </div>}
         <button className="auth-switch" type="button" onClick={() => { setError(""); setMode(value => value === "sign-up" ? "sign-in" : "sign-up"); }}>
           {mode === "sign-up" ? "Already have an account? Sign in" : "New to OMNIVEX? Create an account"}
         </button>
