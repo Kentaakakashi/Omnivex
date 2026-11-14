@@ -40,6 +40,8 @@ export default function CharacterDetailPage() {
   const [versions, setVersions] = useState([]);
   const [activeVersion, setActiveVersion] = useState(null);
   const [aliases, setAliases] = useState([]);
+  const [profileRows, setProfileRows] = useState([]);
+  const [profileFacts, setProfileFacts] = useState([]);
   const [sources, setSources] = useState([]);
   const [capabilities, setCapabilities] = useState([]);
   const [evidence, setEvidence] = useState([]);
@@ -64,18 +66,22 @@ export default function CharacterDetailPage() {
         return;
       }
       setEntity(entityRow);
-      const [versionResult, aliasResult, universeResult, sourceLinkResult] = await Promise.all([
+      const [versionResult, aliasResult, universeResult, sourceLinkResult, profileResult, profileFactResult] = await Promise.all([
         supabase.from("entity_versions").select("*").eq("entity_id", entityRow.id).order("created_at", { ascending: true }),
         supabase.from("entity_aliases").select("id,alias,alias_type,locale").eq("entity_id", entityRow.id).order("alias"),
         entityRow.primary_universe_id
           ? supabase.from("universes").select("id,name,slug,category,status").eq("id", entityRow.primary_universe_id).maybeSingle()
           : Promise.resolve({ data: null }),
-        supabase.from("entity_source_links").select("source_record_id,relationship_type,note").eq("entity_id", entityRow.id)
+        supabase.from("entity_source_links").select("source_record_id,relationship_type,note").eq("entity_id", entityRow.id),
+        supabase.from("entity_profiles").select("*").eq("entity_id", entityRow.id).order("created_at", { ascending: false }),
+        supabase.from("entity_profile_facts").select("*").eq("entity_id", entityRow.id).order("fact_key")
       ]);
       if (!active) return;
-      if (versionResult.error) throw versionResult.error;
+      if (versionResult.error || profileResult.error || profileFactResult.error) throw versionResult.error || profileResult.error || profileFactResult.error;
       setVersions(versionResult.data || []);
       setAliases(aliasResult.data || []);
+      setProfileRows(profileResult.data || []);
+      setProfileFacts(profileFactResult.data || []);
       setUniverse(universeResult.data || null);
       const sourceIds = (sourceLinkResult.data || []).map(item => item.source_record_id).filter(Boolean);
       let linkedSources = [];
@@ -201,6 +207,34 @@ export default function CharacterDetailPage() {
               <article><span>PRIMARY CONTINUITY</span><strong>{activeVersion?.continuity || "Not documented"}</strong><small>{activeVersion?.canon_status === "unknown" ? "Continuity has not been resolved." : "See the selected version record."}</small></article>
             </div>
             {aliases.length ? <div className="character-aliases">{aliases.map(alias => <Pill key={alias.id}>{alias.alias}{alias.locale ? " · " + alias.locale : ""}</Pill>)}</div> : <Empty>No aliases have been attached yet.</Empty>}
+          </Section>
+
+          <Section eyebrow="OFFICIAL PROFILE / SOURCE-LINKED DETAILS" title="Publisher-sourced character details" count={profileFacts.length + " FACTS"}>
+            {profileRows.length ? (
+              <div className="character-profile-source-list">
+                {profileRows.map(profile => (
+                  <article key={profile.id}>
+                    <div><strong>{profile.catalog_source_key === "one_piece" ? "ONE PIECE.com" : profile.catalog_source_key === "dc" ? "DC official profile" : profile.catalog_source_key}</strong><span>{profile.status} · {profile.profile_language?.toUpperCase() || "LANGUAGE UNKNOWN"}</span></div>
+                    {profile.profile_data?.official_summary_excerpt && <p>{profile.profile_data.official_summary_excerpt}</p>}
+                    <small>{profile.sourced_field_count} sourced fields · checked {new Date(profile.source_checked_at).toLocaleDateString()}</small>
+                    <a href={profile.official_profile_url} target="_blank" rel="noreferrer">Open original official profile <ArrowUpRight size={13}/></a>
+                  </article>
+                ))}
+              </div>
+            ) : <Empty>No publisher-sourced profile has been imported for this character yet.</Empty>}
+            {profileFacts.length ? (
+              <div className="character-facts-grid">
+                {profileFacts.map(fact => {
+                  const raw = fact.fact_value?.value ?? fact.fact_value;
+                  const value = typeof raw === "string" ? raw : JSON.stringify(raw);
+                  return <article key={fact.id}>
+                    <span>{String(fact.fact_key || "detail").replace(/_/g, " ")}</span>
+                    <strong>{value || "Not stated"}</strong>
+                    <small>{fact.source_language?.toUpperCase() || "SOURCE"} · {fact.review_status}</small>
+                  </article>;
+                })}
+              </div>
+            ) : profileRows.length ? <Empty>The official profile is linked, but no structured fields were available from that page.</Empty> : null}
           </Section>
 
           <Section eyebrow="02 / VERSIONS & CONTINUITIES" title="Choose a version" count={versions.length + " VERSION RECORDS"}>
