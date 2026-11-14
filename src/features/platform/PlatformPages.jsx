@@ -564,6 +564,8 @@ export function MatchupDetailPage() {
   const navigate = useNavigate();
   const [runningAnalysis, setRunningAnalysis] = useState(false);
   const [analysisActionError, setAnalysisActionError] = useState("");
+  const [aiStatus, setAiStatus] = useState(null);
+  const [checkingAiStatus, setCheckingAiStatus] = useState(false);
   const [matchup, setMatchup] = useState(null);
   const [participants, setParticipants] = useState([]);
   const [report, setReport] = useState(null);
@@ -572,6 +574,28 @@ export function MatchupDetailPage() {
   const [discussions, setDiscussions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  useEffect(() => {
+    let active = true;
+    if (!supabase || !user) {
+      setAiStatus(null);
+      setCheckingAiStatus(false);
+      return () => { active = false; };
+    }
+    setCheckingAiStatus(true);
+    supabase.functions.invoke("omnivex-research", { body: { action: "ai_status" } })
+      .then(({ data, error: statusError }) => {
+        if (!active) return;
+        setAiStatus(statusError ? { configured: false, unavailable: true } : data || { configured: false });
+      })
+      .catch(() => {
+        if (active) setAiStatus({ configured: false, unavailable: true });
+      })
+      .finally(() => {
+        if (active) setCheckingAiStatus(false);
+      });
+    return () => { active = false; };
+  }, [user]);
+
   useEffect(() => {
     let active = true;
     if (!supabase) { setLoading(false); return () => { active = false; }; }
@@ -689,6 +713,9 @@ export function MatchupDetailPage() {
             </button>
           </div>
           <p className="platform-form-note">The engine uses only moderator-verified, version-matched evidence. If either side lacks verified source-backed evidence, the correct result is inconclusive. Every generated report remains unverified until a moderator reviews it.</p>
+          <p className="platform-form-note" role="status">
+            {!user ? "Sign in to check Gemini availability and run an analysis." : checkingAiStatus ? "Checking Gemini engine status…" : aiStatus?.configured ? "Gemini " + (aiStatus.model || "3.8 Flash") + " · server-side AI ready." : aiStatus?.unavailable ? "Gemini status could not be checked. Try again shortly." : "Gemini API key is not configured in Supabase Edge Function Secrets yet."}
+          </p>
           {analysisActionError && <p className="platform-notice platform-notice--error">{analysisActionError}</p>}
           {report ? (
             <>
