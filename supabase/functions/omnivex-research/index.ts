@@ -1438,8 +1438,8 @@ async function persistWikidataEnrichment(client: any, user: any, entity: any, ve
   const officialMarvelUrl = wikidataClaimValues(item, "P856").map((value: any) => cleanText(value, 1000)).find((value: string) => {
     try {
       const parsed = new URL(value);
-      return parsed.hostname.toLowerCase().replace(/^www\\./, "") === "marvel.com" &&
-        /^\\/characters\\//i.test(parsed.pathname);
+      const host = parsed.hostname.toLowerCase().replace("www.", "");
+      return host === "marvel.com" && parsed.pathname.toLowerCase().startsWith("/characters/");
     } catch (_error) { return false; }
   }) || null;
   let officialMarvelSource = null;
