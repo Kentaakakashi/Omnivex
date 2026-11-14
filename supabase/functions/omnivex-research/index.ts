@@ -232,7 +232,7 @@ function sourceHostAllowed(value: string) {
     if (url.protocol !== "https:" || url.username || url.password) return false;
     const host = url.hostname.toLowerCase();
     return [
-      "wikipedia.org", "wikidata.org", "crossref.org", "doi.org",
+      "wikipedia.org", "wikidata.org", "commons.wikimedia.org", "crossref.org", "doi.org",
       "openlibrary.org", "myanimelist.net"
     ].some((domain) => host === domain || host.endsWith("." + domain));
   } catch (_error) {
@@ -986,7 +986,8 @@ function parseDcProfile(html: string, candidate: OfficialCandidate) {
 async function getOrCreateUniverse(client: any, userId: string, sourceKey: string) {
   const configs: Record<string, { slug: string; name: string }> = {
     dc: { slug: "dc-universe", name: "DC Universe" },
-    one_piece: { slug: "one-piece", name: "One Piece" }
+    one_piece: { slug: "one-piece", name: "One Piece" },
+    marvel: { slug: "marvel-universe", name: "Marvel Comics Universe" }
   };
   const config = configs[sourceKey];
   if (!config) throw new Error("Unsupported official catalog source.");
@@ -1254,6 +1255,415 @@ async function importOfficialCatalogBatch(client: any, user: any, sourceKey: str
 }
 
 
+function addUniqueText(values: any[], max = 12) {
+  return Array.from(new Set((values || []).map((value: any) => cleanText(value, 180)).filter(Boolean))).slice(0, max);
+}
+
+function wikidataClaimValues(item: any, property: string) {
+  return (item?.claims?.[property] || []).map((claim: any) => {
+    const snak = claim?.mainsnak;
+    return snak?.snaktype === "value" ? snak?.datavalue?.value : null;
+  }).filter((value: any) => value !== null && value !== undefined);
+}
+
+async function addEntitySourceLink(client: any, userId: string, entityId: string, sourceId: string, relation: string, note: string) {
+  const { error } = await client.from("entity_source_links").insert({
+    entity_id: entityId,
+    source_record_id: sourceId,
+    relationship_type: relation,
+    note,
+    created_by: userId
+  });
+  if (error && error.code !== "23505") throw new Error("Could not link source: " + error.message);
+}
+
+async function getOrCreatePrimaryVersion(client: any, userId: string, entity: any, versionConfig: any = {}) {
+  const { data: rows, error } = await client.from("entity_versions")
+    .select("id,slug,label,continuity,canon_status,status,is_primary_version")
+    .eq("entity_id", entity.id).order("created_at", { ascending: true }).limit(30);
+  if (error) throw new Error("Could not load character versions: " + error.message);
+  let version = (rows || []).find((row: any) => row.is_primary_version) || (rows || [])[0] || null;
+  if (!version) {
+    const { data, error: createError } = await client.from("entity_versions").insert({
+      entity_id: entity.id,
+      slug: versionConfig.slug || "unspecified-continuity",
+      label: versionConfig.label || "Unspecified continuity",
+      continuity: versionConfig.continuity || "Continuity is not resolved by the available source.",
+      canon_status: "unknown",
+      is_composite: false,
+      is_primary_version: true,
+      status: "provisional",
+      created_by: userId
+    }).select("id,slug,label,continuity,canon_status,status,is_primary_version").single();
+    if (createError) throw new Error("Could not create a provisional version: " + createError.message);
+    version = data;
+  }
+  return version;
+}
+
+function commonsLicenseBasis(shortName: string) {
+  const value = cleanText(shortName, 100).toLowerCase().replace(/\s+/g, " ");
+  if (/^cc0(?:\s|$)|creative commons zero/.test(value)) return "cc0";
+  if (/cc by[- ]sa/.test(value)) return "cc_by_sa";
+  if (/cc by(?:\s|$)/.test(value)) return "cc_by";
+  if (/public domain|pd[- ]|public-domain/.test(value)) return "public_domain";
+  return null;
+}
+
+async function importCommonsArtwork(client: any, user: any, entity: any, version: any, commonsFile: string) {
+  const filename = cleanText(commonsFile, 220).replace(/^File:/i, "");
+  if (!filename || filename.length < 3) return { imported: false, reason: "No Commons image is linked." };
+  const params = new URLSearchParams({
+    action: "query",
+    titles: "File:" + filename,
+    prop: "imageinfo",
+    iiprop: "url|extmetadata",
+    iiurlwidth: "900",
+    format: "json",
+    origin: "*"
+  });
+  const response = await fetchJson("https://commons.wikimedia.org/w/api.php?" + params.toString(), {
+    "Accept": "application/json",
+    "User-Agent": "OMNIVEX/1.0 (licensed media metadata import)"
+  });
+  const page = Object.values(response.query?.pages || {})[0] as any;
+  const info = page?.imageinfo?.[0];
+  const metadata = info?.extmetadata || {};
+  if (!info?.url) return { imported: false, reason: "Commons file has no usable image URL." };
+
+  const licenseName = htmlToText(metadata.LicenseShortName?.value || "");
+  const usageBasis = commonsLicenseBasis(licenseName);
+  if (!usageBasis) return { imported: false, reason: "Commons file has no recognized public-domain or Creative Commons license." };
+
+  const fileTitle = cleanText(page.title || ("File:" + filename), 240);
+  const sourceUrl = "https://commons.wikimedia.org/wiki/" + encodeURIComponent(fileTitle.replace(/ /g, "_")).replace(/%3A/gi, ":");
+  const assetUrl = cleanText(info.thumburl || info.url, 1000);
+  const creator = htmlToText(metadata.Artist?.value || metadata.Credit?.value || "");
+  const licenseUrl = cleanText(metadata.LicenseUrl?.value || "", 500);
+  const attribution = [
+    creator ? "Creator: " + creator : "",
+    "License: " + licenseName,
+    licenseUrl || sourceUrl,
+    "Wikimedia Commons"
+  ].filter(Boolean).join(" · ");
+
+  const { data: existing, error: lookupError } = await client.from("entity_media")
+    .select("id,approval_status").eq("entity_version_id", version.id).eq("source_url", sourceUrl).limit(1).maybeSingle();
+  if (lookupError) throw new Error("Could not check existing character artwork: " + lookupError.message);
+  if (existing) return { imported: false, alreadyPresent: true, license: licenseName, status: existing.approval_status };
+
+  const { data, error } = await client.from("entity_media").insert({
+    entity_version_id: version.id,
+    media_kind: "character_artwork",
+    asset_url: assetUrl,
+    source_url: sourceUrl,
+    source_title: fileTitle,
+    source_creator: creator || null,
+    usage_basis: usageBasis,
+    license_name: licenseName,
+    attribution_text: attribution,
+    alt_text: entity.name + " · Wikimedia Commons artwork",
+    is_primary: true,
+    approval_status: "submitted",
+    submitted_by: user.id
+  }).select("id,asset_url,source_url,usage_basis,license_name,approval_status").single();
+  if (error) throw new Error("Could not save licensed artwork metadata: " + error.message);
+  return { imported: true, media: data };
+}
+
+async function persistWikidataEnrichment(client: any, user: any, entity: any, version: any, itemId: string, catalogKey: string, articleUrlOverride?: string, imageOverride?: string) {
+  if (!/^Q[1-9]\d{0,11}$/.test(itemId)) throw new Error("Invalid Wikidata identifier.");
+  const params = new URLSearchParams({
+    action: "wbgetentities",
+    ids: itemId,
+    props: "labels|descriptions|aliases|claims|sitelinks",
+    languages: "en",
+    format: "json",
+    origin: "*"
+  });
+  const response = await fetchJson("https://www.wikidata.org/w/api.php?" + params.toString());
+  const item = response.entities?.[itemId];
+  if (!item || item.missing !== undefined) throw new Error("Wikidata could not resolve " + itemId + ".");
+
+  const wikidataName = cleanText(item.labels?.en?.value, 160) || entity.name;
+  const description = cleanText(item.descriptions?.en?.value, 500);
+  const aliases = addUniqueText(item.aliases?.en?.map((alias: any) => alias.value) || []);
+  const wikiUrl = "https://www.wikidata.org/wiki/" + itemId;
+  const savedWikidata = await saveSource(client, user.id, {
+    title: "Wikidata identity record: " + wikidataName,
+    url: wikiUrl,
+    sourceType: "reference_database",
+    publisher: "Wikidata"
+  });
+  await addEntitySourceLink(client, user.id, entity.id, savedWikidata.source.id, "reference_database",
+    "Wikidata identity and structured reference properties. These are submitted research metadata, not canon verification.");
+  
+  const articleUrl = articleUrlOverride || item.sitelinks?.enwiki?.url || null;
+  let wikipediaSource = null;
+  if (articleUrl && sourceHostAllowed(articleUrl)) {
+    const savedWikipedia = await saveSource(client, user.id, {
+      title: "Wikipedia article: " + wikidataName,
+      url: articleUrl,
+      sourceType: "reference_article",
+      publisher: "Wikipedia"
+    });
+    wikipediaSource = savedWikipedia.source;
+    await addEntitySourceLink(client, user.id, entity.id, wikipediaSource.id, "reference_article",
+      "Secondary-source lore and research lead. Any extracted feats remain submitted and require issue/chapter/episode-level review.");
+  }
+
+  const creatorIds = wikidataClaimValues(item, "P170").map((value: any) => value?.id).filter(Boolean);
+  const firstAppearanceIds = wikidataClaimValues(item, "P4584").map((value: any) => value?.id).filter(Boolean);
+  const narrativeUniverseIds = wikidataClaimValues(item, "P1080").map((value: any) => value?.id).filter(Boolean);
+  const occupationIds = wikidataClaimValues(item, "P106").map((value: any) => value?.id).filter(Boolean);
+  const speciesIds = wikidataClaimValues(item, "P species").map((value: any) => value?.id).filter(Boolean);
+  const referencedIds = addUniqueText([...creatorIds, ...firstAppearanceIds, ...narrativeUniverseIds, ...occupationIds], 20);
+  let referenceLabels: Record<string, string> = {};
+  if (referencedIds.length) {
+    const referenceParams = new URLSearchParams({
+      action: "wbgetentities", ids: referencedIds.join("|"), props: "labels",
+      languages: "en", format: "json", origin: "*"
+    });
+    const referenceData = await fetchJson("https://www.wikidata.org/w/api.php?" + referenceParams.toString());
+    for (const [qid, referenceItem] of Object.entries(referenceData.entities || {}) as any) {
+      const label = cleanText(referenceItem?.labels?.en?.value, 180);
+      if (label) referenceLabels[qid] = label;
+    }
+  }
+
+  const imageFile = imageOverride || (wikidataClaimValues(item, "P18")[0] || null);
+  const facts: any[] = [];
+  if (description) facts.push({ key: "wikidata_description", value: description, locator: "Wikidata English description" });
+  if (aliases.length) facts.push({ key: "wikidata_aliases", value: aliases, locator: "Wikidata English aliases" });
+  if (creatorIds.length) facts.push({ key: "creators", value: creatorIds.map((id: string) => referenceLabels[id] || id), locator: "Wikidata property P170" });
+  if (firstAppearanceIds.length) facts.push({ key: "first_appearance_reference", value: firstAppearanceIds.map((id: string) => referenceLabels[id] || id), locator: "Wikidata property P4584" });
+  if (narrativeUniverseIds.length) facts.push({ key: "narrative_universe_reference", value: narrativeUniverseIds.map((id: string) => referenceLabels[id] || id), locator: "Wikidata property P1080" });
+  if (occupationIds.length) facts.push({ key: "occupation_reference", value: occupationIds.map((id: string) => referenceLabels[id] || id), locator: "Wikidata property P106" });
+
+  const profileData = {
+    identity: { wikidata_id: itemId, wikidata_label: wikidataName, aliases },
+    lore: { secondary_source_url: articleUrl, summary: null },
+    image: imageFile ? { commons_file: imageFile } : null,
+    source_metadata: { publisher: "Wikidata", source_key: catalogKey, source_language: "en", source_kind: "structured_reference" },
+    coverage: { fact_count: facts.length, available_fields: facts.map((fact: any) => fact.key) }
+  };
+  const { data: existingProfile, error: profileLookupError } = await client.from("entity_profiles")
+    .select("id,profile_data,status").eq("entity_id", entity.id).eq("catalog_source_key", catalogKey).maybeSingle();
+  if (profileLookupError) throw new Error("Could not inspect existing enrichment profile: " + profileLookupError.message);
+  if (!existingProfile) {
+    const { error } = await client.from("entity_profiles").insert({
+      entity_id: entity.id, catalog_source_key: catalogKey,
+      official_profile_url: wikiUrl, source_record_id: savedWikidata.source.id,
+      profile_language: "en", profile_data: profileData,
+      sourced_field_count: facts.length, source_checked_at: new Date().toISOString(),
+      status: "submitted", created_by: user.id
+    });
+    if (error && error.code !== "23505") throw new Error("Could not save Wikidata enrichment profile: " + error.message);
+  }
+
+  const factRows = facts.map((fact: any) => ({
+    entity_id: entity.id, entity_version_id: version.id, source_record_id: savedWikidata.source.id,
+    fact_key: fact.key, fact_value: { value: fact.value, language: "en" },
+    source_locator: fact.locator, source_language: "en", review_status: "submitted", created_by: user.id
+  }));
+  if (factRows.length) {
+    const { error } = await client.from("entity_profile_facts").upsert(factRows, {
+      onConflict: "entity_id,source_record_id,fact_key", ignoreDuplicates: true
+    });
+    if (error) throw new Error("Could not save Wikidata facts: " + error.message);
+  }
+
+  for (const alias of aliases) {
+    const { error } = await client.from("entity_aliases").insert({
+      entity_id: entity.id, alias, alias_type: "wikidata_alias", locale: "en", created_by: user.id
+    });
+    if (error && error.code !== "23505") throw new Error("Could not save a Wikidata alias: " + error.message);
+  }
+
+  if (description && !entity.short_description) {
+    const { error } = await client.from("entities").update({ short_description: description }).eq("id", entity.id);
+    if (error) throw new Error("Could not update the character description: " + error.message);
+  }
+
+  let imageResult: any = { imported: false, reason: "No freely licensed Commons image was linked." };
+  if (imageFile) imageResult = await importCommonsArtwork(client, user, entity, version, imageFile);
+  return {
+    wikidata_name: wikidataName,
+    wikidata_source_id: savedWikidata.source.id,
+    wikipedia_source_id: wikipediaSource?.id || null,
+    wikipedia_url: articleUrl,
+    facts_created: factRows.length,
+    image: imageResult
+  };
+}
+
+async function enrichExistingEntity(client: any, user: any, entityId: string) {
+  const { data: entity, error: entityError } = await client.from("entities")
+    .select("id,slug,name,entity_type,primary_universe_id,short_description,status")
+    .eq("id", entityId).maybeSingle();
+  if (entityError || !entity) throw new Error("Could not load the selected existing entity.");
+  if (!(entity.entity_type || "").toLowerCase().includes("character")) return { name: entity.name, skipped: true, reason: "Not a character record." };
+
+  const { data: existingProfiles, error: profilesError } = await client.from("entity_profiles")
+    .select("catalog_source_key,official_profile_url,profile_data,source_record_id")
+    .eq("entity_id", entity.id);
+  if (profilesError) throw new Error("Could not inspect existing publisher profiles.");
+  const onePieceProfile = (existingProfiles || []).find((profile: any) => profile.catalog_source_key === "one_piece");
+  const titleFromOfficial = cleanText(onePieceProfile?.profile_data?.identity?.official_page_title || "", 220).split(" | ")[0];
+  const queryNames = addUniqueText([entity.name, titleFromOfficial, onePieceProfile?.official_profile_url?.split("/").filter(Boolean).pop()], 3);
+  let selected: any = null;
+  for (const query of queryNames) {
+    const results = await searchWikidata(query);
+    const exact = results.filter((result: any) => canonicalNameKey(result.name) === canonicalNameKey(query));
+    if (exact.length === 1) { selected = exact[0]; break; }
+  }
+  if (!selected) return { name: entity.name, skipped: true, reason: "No unambiguous exact Wikidata match; no guessed identity was attached." };
+
+  const version = await getOrCreatePrimaryVersion(client, user.id, entity);
+  const enrichment = await persistWikidataEnrichment(client, user, entity, version, selected.providerId, "wikidata_lore");
+  let research: any = null;
+  if (enrichment.wikipedia_source_id) {
+    try {
+      research = await analyseSource(client, user, enrichment.wikipedia_source_id, version.id);
+    } catch (error) {
+      research = { status: "not_analyzed", reason: cleanText(error instanceof Error ? error.message : "Lore analysis unavailable.", 220) };
+    }
+  }
+  return {
+    name: entity.name, skipped: false, wikidata: selected.providerId,
+    facts_created: enrichment.facts_created, image: enrichment.image,
+    evidence_created: research?.evidence_created || 0,
+    capabilities_created: research?.capabilities_created || 0,
+    research_status: research?.status || (enrichment.wikipedia_source_id ? "not_analyzed" : "no_encyclopedia_article")
+  };
+}
+
+async function enrichExistingCatalogBatch(client: any, user: any, offset: number, limit: number) {
+  if (!Number.isInteger(offset) || offset < 0 || offset > 5000 || !Number.isInteger(limit) || limit < 1 || limit > 3) {
+    throw new Error("Existing catalogue enrichment accepts an offset and a batch size of 1–3.");
+  }
+  const { data: entities, error } = await client.from("entities").select("id,name,entity_type,created_at")
+    .eq("entity_type", "character").order("created_at", { ascending: true }).order("id", { ascending: true })
+    .range(offset, offset + limit - 1);
+  if (error) throw new Error("Could not load the existing character batch: " + error.message);
+  const results = await mapConcurrent(entities || [], 2, async (entity: any) => {
+    try { return await enrichExistingEntity(client, user, entity.id); }
+    catch (error) { return { name: entity.name, skipped: true, reason: cleanText(error instanceof Error ? error.message : "Enrichment failed.", 220) }; }
+  });
+  return {
+    offset, next_offset: offset + (entities || []).length,
+    has_more: (entities || []).length === limit,
+    processed: results.length,
+    images_added: results.filter((item: any) => item.image?.imported).length,
+    evidence_added: results.reduce((sum: number, item: any) => sum + Number(item.evidence_created || 0), 0),
+    capabilities_added: results.reduce((sum: number, item: any) => sum + Number(item.capabilities_created || 0), 0),
+    results
+  };
+}
+
+async function importMarvelCharacter(client: any, user: any, universe: any, candidate: any) {
+  const itemId = cleanText(candidate.id, 20);
+  const name = cleanText(candidate.name, 160);
+  if (!/^Q[1-9]\d{0,11}$/.test(itemId) || !name) return { skipped: true, reason: "Invalid Wikidata Marvel candidate." };
+  const slug = "marvel-" + itemId.toLowerCase();
+  const { data: existing, error: lookupError } = await client.from("entities")
+    .select("id,slug,name,entity_type,primary_universe_id,short_description,status")
+    .eq("slug", slug).maybeSingle();
+  if (lookupError) throw new Error("Could not check Marvel identity " + itemId + ".");
+  let entity = existing;
+  if (!entity) {
+    const { data, error } = await client.from("entities").insert({
+      slug, name, entity_type: "character", primary_universe_id: universe.id,
+      short_description: cleanText(candidate.description, 420) || null,
+      status: "provisional", created_by: user.id
+    }).select("id,slug,name,entity_type,primary_universe_id,short_description,status").single();
+    if (error) throw new Error("Could not create Marvel identity " + name + ": " + error.message);
+    entity = data;
+  }
+  const version = await getOrCreatePrimaryVersion(client, user.id, entity, {
+    slug: "marvel-comics-profile",
+    label: "Marvel Comics · continuity unresolved",
+    continuity: "Marvel Comics narrative universe reference. Exact Earth, run and incarnation remain unresolved; this is not an Earth-616 composite."
+  });
+  const enrichment = await persistWikidataEnrichment(
+    client, user, entity, version, itemId, "marvel_wikidata",
+    candidate.articleUrl || undefined, candidate.imageFile || undefined
+  );
+  let research: any = null;
+  if (enrichment.wikipedia_source_id) {
+    try { research = await analyseSource(client, user, enrichment.wikipedia_source_id, version.id); }
+    catch (error) { research = { status: "not_analyzed", reason: cleanText(error instanceof Error ? error.message : "Lore analysis unavailable.", 220) }; }
+  }
+  return {
+    name, id: itemId, created: !existing,
+    facts_created: enrichment.facts_created,
+    image: enrichment.image,
+    evidence_created: research?.evidence_created || 0,
+    capabilities_created: research?.capabilities_created || 0,
+    research_status: research?.status || (enrichment.wikipedia_source_id ? "not_analyzed" : "no_encyclopedia_article")
+  };
+}
+
+async function importMarvelBatch(client: any, user: any, offset: number, limit: number) {
+  if (!Number.isInteger(offset) || offset < 0 || offset > 50000 || !Number.isInteger(limit) || limit < 1 || limit > 3) {
+    throw new Error("Marvel import accepts a batch size of 1–3 characters to keep source and research calls bounded.");
+  }
+  const sparql = [
+    "SELECT DISTINCT ?item ?itemLabel ?itemDescription ?image ?article WHERE {",
+    "  ?item wdt:P1080 wd:Q931597; wdt:P31/wdt:P279* wd:Q95074.",
+    "  OPTIONAL { ?item wdt:P18 ?image. }",
+    "  OPTIONAL { ?article schema:about ?item; schema:isPartOf <https://en.wikipedia.org/>. }",
+    "  SERVICE wikibase:label { bd:serviceParam wikibase:language \\"en\\". }",
+    "}",
+    "ORDER BY LCASE(STR(?itemLabel))",
+    "LIMIT " + limit,
+    "OFFSET " + offset
+  ].join("\\n");
+  const params = new URLSearchParams({ query: sparql, format: "json" });
+  const result = await fetchJson("https://query.wikidata.org/sparql?" + params.toString(), {
+    "Accept": "application/sparql-results+json",
+    "User-Agent": "OMNIVEX/1.0 (Marvel Universe identity catalogue)"
+  });
+  const bindings = result.results?.bindings || [];
+  const universe = await getOrCreateUniverse(client, user.id, "marvel");
+  const candidates = bindings.map((row: any) => {
+    const uri = String(row.item?.value || "");
+    const id = uri.split("/").pop();
+    const imageUrl = String(row.image?.value || "");
+    let imageFile = "";
+    try {
+      const parsed = new URL(imageUrl);
+      imageFile = decodeURIComponent(parsed.pathname.split("/").pop() || "");
+    } catch (_error) {}
+    return {
+      id,
+      name: cleanText(row.itemLabel?.value, 160),
+      description: cleanText(row.itemDescription?.value, 420),
+      articleUrl: cleanText(row.article?.value, 900),
+      imageFile
+    };
+  }).filter((item: any) => /^Q[1-9]\d{0,11}$/.test(item.id) && item.name);
+
+  const results = await mapConcurrent(candidates, 2, async (candidate: any) => {
+    try { return await importMarvelCharacter(client, user, universe, candidate); }
+    catch (error) { return { name: candidate.name, id: candidate.id, skipped: true, reason: cleanText(error instanceof Error ? error.message : "Import failed.", 240) }; }
+  });
+  return {
+    source: "Wikidata · Marvel Universe",
+    offset, next_offset: offset + bindings.length,
+    has_more: bindings.length === limit,
+    candidates: candidates.length,
+    imported: results.filter((item: any) => !item.skipped).length,
+    skipped: results.filter((item: any) => item.skipped).length,
+    images_added: results.filter((item: any) => item.image?.imported).length,
+    evidence_added: results.reduce((sum: number, item: any) => sum + Number(item.evidence_created || 0), 0),
+    capabilities_added: results.reduce((sum: number, item: any) => sum + Number(item.capabilities_created || 0), 0),
+    results,
+    note: "Wikidata is a community-curated index, not an official Marvel database. Lore and feat candidates remain submitted; exact Marvel continuity is unresolved unless a source states it."
+  };
+}
+
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return reply({ error: "Method not allowed." }, 405);
@@ -1272,6 +1682,18 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!user) return reply({ error: "Sign in to save sources or import records into the OMNIVEX index." }, 401);
+
+    if (action === "enrich_existing_catalog_batch") {
+      const offset = Number(body?.offset || 0);
+      const limit = Number(body?.limit || 2);
+      return reply(await enrichExistingCatalogBatch(client, user, offset, limit));
+    }
+
+    if (action === "import_marvel_batch") {
+      const offset = Number(body?.offset || 0);
+      const limit = Number(body?.limit || 2);
+      return reply(await importMarvelBatch(client, user, offset, limit));
+    }
 
     if (action === "official_catalog_batch") {
       const sourceKey = cleanText(body?.source, 40).toLowerCase();
