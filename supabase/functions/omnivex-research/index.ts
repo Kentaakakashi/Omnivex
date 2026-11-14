@@ -770,6 +770,441 @@ async function analyzeMatchup(client:any,user:any,matchupId:string) {
   return {report:report.data,report_body:reportBody,evidence_links_created:linksCreated,status:"stored_unverified_report",note:"Report remains unverified until an authorized reviewer checks claims, versions, citations and reasoning."};
 }
 
+
+type OfficialCandidate = { name: string; url: string; pathSlug: string; directoryText?: string };
+
+function decodeHtml(value: string) {
+  const named: Record<string, string> = {
+    "&amp;": "&", "&quot;": "\"", "&#39;": "'", "&apos;": "'",
+    "&lt;": "<", "&gt;": ">", "&nbsp;": " ", "&ndash;": "–",
+    "&mdash;": "—", "&rsquo;": "’", "&lsquo;": "‘",
+    "&rdquo;": "”", "&ldquo;": "“", "&hellip;": "…"
+  };
+  return value
+    .replace(/&#x([0-9a-f]+);/gi, (_m, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_m, num) => String.fromCodePoint(Number(num)))
+    .replace(/&[a-z]+;/gi, (entity) => named[entity.toLowerCase()] ?? entity);
+}
+
+function htmlToText(html: string) {
+  return decodeHtml(String(html || "")
+    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<(br|hr)\b[^>]*>/gi, "\n")
+    .replace(/<\/(p|div|li|h[1-6]|dt|dd|tr|section|article|header|footer|ul|ol|table|figcaption)>/gi, "\n")
+    .replace(/<[^>]+>/g, " "))
+    .replace(/\r/g, "\n")
+    .replace(/[ \t\f\v]+/g, " ")
+    .replace(/\n\s+/g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
+function metaContent(html: string, key: string) {
+  const tags = html.match(/<meta\b[^>]*>/gi) || [];
+  for (const tag of tags) {
+    const keyMatch = tag.match(/\b(?:name|property)\s*=\s*["']([^"']+)["']/i);
+    const contentMatch = tag.match(/\bcontent\s*=\s*["']([^"']*)["']/i);
+    if (keyMatch?.[1]?.toLowerCase() === key.toLowerCase() && contentMatch) {
+      return cleanText(decodeHtml(contentMatch[1]), 1600);
+    }
+  }
+  return "";
+}
+
+function firstTagText(html: string, tag: string) {
+  const match = html.match(new RegExp("<" + tag + "\\\\b[^>]*>([\\\\s\\\\S]*?)<\\\\/" + tag + ">", "i"));
+  return match ? cleanText(htmlToText(match[1]), 220) : "";
+}
+
+function trimWordCount(value: string, maxWords = 22) {
+  return cleanText(value, 1400).split(/\s+/).filter(Boolean).slice(0, maxWords).join(" ");
+}
+
+function readAttribute(attributes: string, name: string) {
+  const match = attributes.match(new RegExp("\\\\b" + name + "\\\\s*=\\\\s*['\\\"]([^'\\\"]*)['\\\"]", "i"));
+  return match ? decodeHtml(match[1]) : "";
+}
+
+function canonicalNameKey(value: string) {
+  return cleanText(value, 200).toLowerCase()
+    .replace(/\([^)]*\)/g, " ")
+    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+async function fetchOfficialHtml(url: string, allowedHost: string) {
+  const parsed = new URL(url);
+  if (parsed.protocol !== "https:" || (parsed.hostname !== allowedHost && !parsed.hostname.endsWith("." + allowedHost))) {
+    throw new Error("Blocked non-official catalog URL.");
+  }
+  const response = await fetch(url, {
+    headers: {
+      "Accept": "text/html,application/xhtml+xml",
+      "User-Agent": "OMNIVEX Official Character Catalog importer/1.0"
+    },
+    signal: AbortSignal.timeout(14000)
+  });
+  if (!response.ok) throw new Error("Official source returned HTTP " + response.status);
+  return await response.text();
+}
+
+function parseDcDirectory(html: string) : OfficialCandidate[] {
+  const found = new Map<string, OfficialCandidate>();
+  const anchors = html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi);
+  for (const match of anchors) {
+    const attributes = match[1] || "";
+    const href = readAttribute(attributes, "href");
+    if (!href) continue;
+    let parsed: URL;
+    try { parsed = new URL(href, "https://www.dc.com"); } catch { continue; }
+    if (parsed.hostname !== "www.dc.com" && parsed.hostname !== "dc.com") continue;
+    const pathMatch = parsed.pathname.match(/^\/characters\/([a-z0-9-]+)\/?$/i);
+    if (!pathMatch || !parsed.searchParams.has("id")) continue;
+    const inner = match[2] || "";
+    const image = inner.match(/<img\b([^>]*)>/i);
+    const name = cleanText(
+      htmlToText(inner) || readAttribute(image?.[1] || "", "alt") || readAttribute(attributes, "title"),
+      160
+    );
+    if (!name) continue;
+    const pathSlug = pathMatch[1].toLowerCase();
+    const url = "https://www.dc.com" + parsed.pathname + parsed.search;
+    if (!found.has(url)) found.set(url, { name, url, pathSlug });
+  }
+  return Array.from(found.values());
+}
+
+function parseOnePieceDirectory(html: string) : OfficialCandidate[] {
+  const found = new Map<string, OfficialCandidate>();
+  const anchors = html.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi);
+  for (const match of anchors) {
+    const attributes = match[1] || "";
+    const href = readAttribute(attributes, "href");
+    if (!href) continue;
+    let parsed: URL;
+    try { parsed = new URL(href, "https://one-piece.com"); } catch { continue; }
+    if (parsed.hostname !== "one-piece.com" && parsed.hostname !== "www.one-piece.com") continue;
+    const pathMatch = parsed.pathname.match(/^\/character\/([a-z0-9_-]+)\/index\.html$/i);
+    if (!pathMatch || ["index", "syllabary"].includes(pathMatch[1].toLowerCase())) continue;
+    const inner = match[2] || "";
+    const image = inner.match(/<img\b([^>]*)>/i);
+    const name = cleanText(
+      htmlToText(inner) || readAttribute(image?.[1] || "", "alt") || readAttribute(attributes, "title"),
+      160
+    );
+    if (!name) continue;
+    const pathSlug = pathMatch[1].toLowerCase();
+    const url = "https://one-piece.com" + parsed.pathname;
+    if (!found.has(url)) found.set(url, { name, url, pathSlug });
+  }
+  return Array.from(found.values());
+}
+
+const ONE_PIECE_LABELS: Array<[string, string]> = [
+  ["通称", "official_alias"],
+  ["悪魔の実", "special_ability_name"],
+  ["懸賞金", "bounty"],
+  ["年齢", "age"],
+  ["誕生日", "birthday"],
+  ["身長", "height"],
+  ["出身地", "origin"],
+  ["好物", "favorite_food"],
+  ["組織", "affiliation"],
+  ["所属", "role_or_affiliation"],
+  ["職業", "occupation"],
+  ["声優", "voice_actor"]
+];
+
+function readJapaneseField(lines: string[], label: string) {
+  const index = lines.findIndex(line => line === label || line.startsWith(label + "：") || line.startsWith(label + ":"));
+  if (index < 0) return "";
+  const sameLine = lines[index].slice(label.length).replace(/^[:：]\s*/, "").trim();
+  if (sameLine) return cleanText(sameLine, 280);
+  const labels = new Set(ONE_PIECE_LABELS.map(item => item[0]));
+  for (let offset = 1; offset <= 3; offset++) {
+    const candidate = lines[index + offset] || "";
+    if (!candidate) continue;
+    if (labels.has(candidate) || labels.has(candidate.replace(/[：:].*$/, ""))) break;
+    if (/^(キャラクター概要|プロフィール|関連情報|画像|トップ|検索|キャラクター検索)$/.test(candidate)) continue;
+    return cleanText(candidate, 280);
+  }
+  return "";
+}
+
+function parseOnePieceProfile(html: string, candidate: OfficialCandidate) {
+  const text = htmlToText(html);
+  const lines = text.split("\n").map(line => line.trim()).filter(Boolean);
+  const fields: Record<string, string> = {};
+  const facts: Array<{ key: string; value: string; locator: string }> = [];
+  for (const [label, key] of ONE_PIECE_LABELS) {
+    const value = readJapaneseField(lines, label);
+    if (value) {
+      fields[key] = value;
+      facts.push({ key, value, locator: label });
+    }
+  }
+  const title = metaContent(html, "og:title") || firstTagText(html, "h1") || candidate.name;
+  const aliases = fields.official_alias ? [fields.official_alias] : [];
+  facts.unshift({ key: "official_name", value: candidate.name, locator: "Official character directory entry" });
+  const profileData = {
+    identity: { official_display_name: candidate.name, official_page_title: title, aliases },
+    official_fields: fields,
+    source_metadata: { publisher: "ONE PIECE.com", source_key: "one_piece", source_language: "ja", profile_kind: "official_character_profile" },
+    coverage: { field_count: facts.length, available_fields: facts.map(item => item.key) }
+  };
+  return { title: candidate.name + " — ONE PIECE.com official character profile", profileData, facts, language: "ja", summary: "" };
+}
+
+function parseDcProfile(html: string, candidate: OfficialCandidate) {
+  const title = firstTagText(html, "h1") || metaContent(html, "og:title") || candidate.name;
+  const description = metaContent(html, "description") || metaContent(html, "og:description");
+  const excerpt = trimWordCount(description, 22);
+  const facts: Array<{ key: string; value: string; locator: string }> = [
+    { key: "official_name", value: candidate.name, locator: "DC official character directory" }
+  ];
+  if (excerpt) facts.push({ key: "official_summary_excerpt", value: excerpt, locator: "Official profile summary (short excerpt)" });
+  const profileData = {
+    identity: { official_display_name: candidate.name, official_page_title: title },
+    official_summary_excerpt: excerpt || null,
+    source_metadata: { publisher: "DC", source_key: "dc", source_language: "en", profile_kind: "official_character_profile", directory_category: "individual" },
+    coverage: { field_count: facts.length, available_fields: facts.map(item => item.key) }
+  };
+  return { title: candidate.name + " — DC official character profile", profileData, facts, language: "en", summary: excerpt };
+}
+
+async function getOrCreateUniverse(client: any, userId: string, sourceKey: string) {
+  const configs: Record<string, { slug: string; name: string }> = {
+    dc: { slug: "dc-universe", name: "DC Universe" },
+    one_piece: { slug: "one-piece", name: "One Piece" }
+  };
+  const config = configs[sourceKey];
+  if (!config) throw new Error("Unsupported official catalog source.");
+  const { data: existing, error: lookupError } = await client.from("universes").select("id,slug,name").eq("slug", config.slug).maybeSingle();
+  if (lookupError) throw new Error("Could not locate the universe: " + lookupError.message);
+  if (existing) return existing;
+  const { data, error } = await client.from("universes").insert({
+    slug: config.slug, name: config.name, category: "fictional", status: "provisional", created_by: userId
+  }).select("id,slug,name").single();
+  if (error) throw new Error("Could not create the universe: " + error.message);
+  return data;
+}
+
+async function mapConcurrent<T, R>(items: T[], concurrency: number, task: (item: T) => Promise<R>) {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (true) {
+      const index = cursor++;
+      if (index >= items.length) return;
+      results[index] = await task(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+async function importOfficialCandidate(client: any, user: any, sourceKey: string, candidate: OfficialCandidate, page: number, universe: any, existingEntities: any[], existingAliases: any[]) {
+  const host = sourceKey === "dc" ? "dc.com" : "one-piece.com";
+  const detailHtml = await fetchOfficialHtml(candidate.url, host);
+  const parsed = sourceKey === "dc" ? parseDcProfile(detailHtml, candidate) : parseOnePieceProfile(detailHtml, candidate);
+  if (!parsed.facts.length) throw new Error("The official profile did not expose any structured facts.");
+
+  const slugPrefix = sourceKey === "dc" ? "dc-" : "op-";
+  const slug = slugPrefix + (slugify(candidate.pathSlug) || "character");
+  const aliases = parsed.profileData?.identity?.aliases || [];
+  const aliasKeys = new Set([candidate.name, ...aliases].map(canonicalNameKey).filter(Boolean));
+  let entity = existingEntities.find(row =>
+    row.slug === slug ||
+    canonicalNameKey(row.name) === canonicalNameKey(candidate.name)
+  );
+  if (!entity) {
+    const aliasMatch = existingAliases.find(row => aliasKeys.has(canonicalNameKey(row.alias)));
+    if (aliasMatch) entity = existingEntities.find(row => row.id === aliasMatch.entity_id) || null;
+  }
+  if (!entity && sourceKey === "one_piece") {
+    const commonNames: Record<string, string[]> = {
+      "モンキー・d・ルフィ": ["monkey d luffy", "luffy"],
+      "ロロノア・ゾロ": ["roronoa zoro", "zoro"],
+      "ナミ": ["nami"],
+      "ウソップ": ["usopp"],
+      "サンジ": ["sanji"],
+      "トニートニー・チョッパー": ["tony tony chopper", "chopper"],
+      "ニコ・ロビン": ["nico robin", "robin"],
+      "フランキー": ["franky"],
+      "ブルック": ["brook"],
+      "ジンベエ": ["jinbe", "jimbei"]
+    };
+    const mapped = commonNames[cleanText(candidate.name, 160).toLowerCase()] || [];
+    const mappedKeys = new Set(mapped.map(canonicalNameKey));
+    const match = existingEntities.find(row => mappedKeys.has(canonicalNameKey(row.name))) ||
+      existingAliases.find(row => mappedKeys.has(canonicalNameKey(row.alias)));
+    if (match) entity = existingEntities.find(row => row.id === (match.id || match.entity_id)) || null;
+  }
+
+  const { data: sourceExisting, error: sourceLookupError } = await client.from("source_records")
+    .select("id,title,url").eq("url", candidate.url).maybeSingle();
+  if (sourceLookupError) throw new Error("Could not check source record: " + sourceLookupError.message);
+  let sourceRecord = sourceExisting;
+  if (!sourceRecord) {
+    const { data, error } = await client.from("source_records").insert({
+      title: parsed.title,
+      source_type: "official_profile",
+      publisher_or_host: sourceKey === "dc" ? "DC" : "ONE PIECE.com",
+      url: candidate.url,
+      locator: "Official character profile page",
+      reliability_grade: "A",
+      source_notes: "First-party publisher/franchise profile. Only concise structured metadata is stored; full page text and unlicensed artwork are not copied. Profile and facts remain submitted pending review.",
+      submitted_by: user.id,
+      review_status: "submitted"
+    }).select("id,title,url").single();
+    if (error) throw new Error("Could not save official source: " + error.message);
+    sourceRecord = data;
+  }
+
+  if (!entity) {
+    const { data, error } = await client.from("entities").insert({
+      slug, name: candidate.name, entity_type: "character", primary_universe_id: universe.id,
+      short_description: parsed.summary || null, status: "provisional", created_by: user.id
+    }).select("id,slug,name").single();
+    if (error) {
+      if (error.code === "23505") throw new Error("A character with a conflicting slug already exists; deduplication needs review.");
+      throw new Error("Could not create character identity: " + error.message);
+    }
+    entity = data;
+    existingEntities.push(entity);
+  } else if (parsed.summary && !entity.short_description) {
+    await client.from("entities").update({ short_description: parsed.summary }).eq("id", entity.id);
+  }
+
+  const versionSlug = sourceKey + "-official-profile";
+  const { data: versionExisting, error: versionLookupError } = await client.from("entity_versions")
+    .select("id,slug,is_primary_version").eq("entity_id", entity.id).eq("slug", versionSlug).maybeSingle();
+  if (versionLookupError) throw new Error("Could not check profile version: " + versionLookupError.message);
+  let version = versionExisting;
+  if (!version) {
+    const { data: anyVersions, error: anyVersionError } = await client.from("entity_versions")
+      .select("id").eq("entity_id", entity.id).limit(1);
+    if (anyVersionError) throw new Error("Could not inspect existing versions: " + anyVersionError.message);
+    const { data, error } = await client.from("entity_versions").insert({
+      entity_id: entity.id, slug: versionSlug,
+      label: sourceKey === "dc" ? "DC official profile · continuity unspecified" : "ONE PIECE official character profile",
+      continuity: sourceKey === "dc"
+        ? "The official profile does not identify a single comic continuity or adaptation."
+        : "ONE PIECE official character catalogue; individual source work/arc scope is not declared by the profile.",
+      canon_status: "unknown", version_notes: "Imported from a first-party profile. This is an identity/profile scope, not a composite power version.",
+      is_composite: false, is_primary_version: !(anyVersions || []).length,
+      status: "provisional", created_by: user.id
+    }).select("id,slug").single();
+    if (error) throw new Error("Could not create official profile version: " + error.message);
+    version = data;
+  }
+
+  const { data: profileExisting, error: profileLookupError } = await client.from("entity_profiles")
+    .select("id,status").eq("entity_id", entity.id).eq("catalog_source_key", sourceKey).maybeSingle();
+  if (profileLookupError) throw new Error("Could not check profile data: " + profileLookupError.message);
+  let profileCreated = false;
+  if (!profileExisting) {
+    const { error } = await client.from("entity_profiles").insert({
+      entity_id: entity.id, catalog_source_key: sourceKey, official_profile_url: candidate.url,
+      source_record_id: sourceRecord.id, profile_language: parsed.language,
+      profile_data: parsed.profileData, sourced_field_count: parsed.facts.length,
+      source_checked_at: new Date().toISOString(), status: "submitted", created_by: user.id
+    });
+    if (error) throw new Error("Could not save structured character profile: " + error.message);
+    profileCreated = true;
+  }
+
+  if (profileCreated) {
+    const factRows = parsed.facts.map((fact: any) => ({
+      entity_id: entity.id, entity_version_id: version.id, source_record_id: sourceRecord.id,
+      fact_key: fact.key, fact_value: { value: fact.value, language: parsed.language },
+      source_locator: fact.locator, source_language: parsed.language,
+      review_status: "submitted", created_by: user.id
+    }));
+    const { error: factsError } = await client.from("entity_profile_facts").insert(factRows);
+    if (factsError && factsError.code !== "23505") throw new Error("Could not save profile facts: " + factsError.message);
+  }
+
+  const { data: linkExisting, error: linkLookupError } = await client.from("entity_source_links")
+    .select("id").eq("entity_id", entity.id).eq("source_record_id", sourceRecord.id).maybeSingle();
+  if (linkLookupError) throw new Error("Could not check profile-source link: " + linkLookupError.message);
+  if (!linkExisting) {
+    const { error } = await client.from("entity_source_links").insert({
+      entity_id: entity.id, source_record_id: sourceRecord.id, relationship_type: "official_profile",
+      note: "First-party official character profile. Structured details are stored separately and remain submitted pending review.",
+      created_by: user.id
+    });
+    if (error && error.code !== "23505") throw new Error("Could not link official profile source: " + error.message);
+  }
+
+  for (const alias of aliases) {
+    const cleanAlias = cleanText(alias, 160);
+    if (!cleanAlias) continue;
+    const { error } = await client.from("entity_aliases").insert({
+      entity_id: entity.id, alias: cleanAlias, alias_type: "official_alias",
+      locale: parsed.language, created_by: user.id
+    });
+    if (error && error.code !== "23505") throw new Error("Could not save official alias: " + error.message);
+  }
+
+  return { entityId: entity.id, name: entity.name, created: !existingEntities.some(row => row.id === entity.id && row.slug === entity.slug), profileCreated, factCount: profileCreated ? parsed.facts.length : 0 };
+}
+
+async function importOfficialCatalogPage(client: any, user: any, sourceKey: string, page: number) {
+  if (!Number.isInteger(page) || page < 0 || page > 50) throw new Error("Invalid catalog page.");
+  const universe = await getOrCreateUniverse(client, user.id, sourceKey);
+  let directoryUrl = "";
+  let directoryHtml = "";
+  let candidates: OfficialCandidate[] = [];
+  if (sourceKey === "dc") {
+    if (page < 1 || page > 13) throw new Error("DC catalog pages are numbered 1 through 13.");
+    const filter = "eyJmaWx0ZXJDaGFyYWN0ZXJUeXBlIjpbIkluZGl2aWR1YWxzIl19";
+    directoryUrl = "https://www.dc.com/characters?filters=" + filter + "&page=" + page;
+    directoryHtml = await fetchOfficialHtml(directoryUrl, "dc.com");
+    candidates = parseDcDirectory(directoryHtml);
+  } else if (sourceKey === "one_piece") {
+    if (page > 41) throw new Error("ONE PIECE official character directory pages are numbered 0 through 41.");
+    directoryUrl = "https://one-piece.com/character/syllabary/index.html?page=" + page;
+    directoryHtml = await fetchOfficialHtml(directoryUrl, "one-piece.com");
+    candidates = parseOnePieceDirectory(directoryHtml);
+  } else {
+    throw new Error("Unsupported official catalog source.");
+  }
+  if (!candidates.length) {
+    return { source: sourceKey, page, directory_url: directoryUrl, candidates: 0, imported: 0, skipped: 0, failed: 0, errors: [], done: true };
+  }
+
+  const [{ data: existingEntities, error: entityListError }, { data: existingAliases, error: aliasListError }] = await Promise.all([
+    client.from("entities").select("id,name,slug,short_description").eq("primary_universe_id", universe.id).limit(5000),
+    client.from("entity_aliases").select("entity_id,alias").limit(10000)
+  ]);
+  if (entityListError || aliasListError) throw new Error("Could not load existing records for duplicate detection.");
+
+  const results = await mapConcurrent(candidates, 5, async (candidate) => {
+    try {
+      const result = await importOfficialCandidate(client, user, sourceKey, candidate, page, universe, existingEntities || [], existingAliases || []);
+      return { ok: true, ...result };
+    } catch (error) {
+      return { ok: false, name: candidate.name, error: cleanText(error instanceof Error ? error.message : "Import failed.", 260) };
+    }
+  });
+
+  const imported = results.filter((item: any) => item.ok && item.profileCreated).length;
+  const skipped = results.filter((item: any) => item.ok && !item.profileCreated).length;
+  const failures = results.filter((item: any) => !item.ok);
+  return {
+    source: sourceKey, page, directory_url: directoryUrl,
+    candidates: candidates.length, imported, skipped, failed: failures.length,
+    imported_names: results.filter((item: any) => item.ok && item.profileCreated).map((item: any) => item.name),
+    errors: failures.slice(0, 8).map((item: any) => ({ name: item.name, error: item.error })),
+    done: false,
+    note: "All imported identities, profile facts and source records remain provisional/submitted. Official profile facts are not battle feats and are not moderator-verified."
+  };
+}
+
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return reply({ error: "Method not allowed." }, 405);
@@ -788,6 +1223,12 @@ Deno.serve(async (req: Request) => {
     }
 
     if (!user) return reply({ error: "Sign in to save sources or import records into the OMNIVEX index." }, 401);
+
+    if (action === "official_catalog_page") {
+      const sourceKey = cleanText(body?.source, 40).toLowerCase();
+      const page = Number(body?.page);
+      return reply(await importOfficialCatalogPage(client, user, sourceKey, page));
+    }
 
     if (action === "save_source") {
       const saved = await saveSource(client, user.id, body?.source);
