@@ -1608,10 +1608,48 @@ async function importMarvelCharacter(client: any, user: any, universe: any, cand
   const name = cleanText(candidate.name, 160);
   if (!/^Q[1-9]\d{0,11}$/.test(itemId) || !name) return { skipped: true, reason: "Invalid Wikidata Marvel candidate." };
   const slug = "marvel-" + itemId.toLowerCase();
-  const { data: existing, error: lookupError } = await client.from("entities")
+  const { data: slugExisting, error: lookupError } = await client.from("entities")
     .select("id,slug,name,entity_type,primary_universe_id,short_description,status")
     .eq("slug", slug).maybeSingle();
   if (lookupError) throw new Error("Could not check Marvel identity " + itemId + ".");
+  let existing = slugExisting || null;
+
+  // Reuse a pre-indexed Marvel identity only when its first-party profile URL matches exactly.
+  if (!existing && candidate.officialPageUrl) {
+    const normalizedUrl = candidate.officialPageUrl.replace(/\\/+$/, "");
+    const { data: matchingSources, error: sourceError } = await client.from("source_records")
+      .select("id,url").in("url", [normalizedUrl, normalizedUrl + "/"]).limit(3);
+    if (sourceError) throw new Error("Could not check existing Marvel official profile links.");
+    const sourceIds = (matchingSources || []).map((row: any) => row.id);
+    if (sourceIds.length) {
+      const { data: links, error: linkError } = await client.from("entity_source_links")
+        .select("entity_id").in("source_record_id", sourceIds);
+      if (linkError) throw new Error("Could not check existing Marvel entity links.");
+      const entityIds = addUniqueText((links || []).map((row: any) => row.entity_id), 4);
+      const { data: matches, error: entityError } = entityIds.length
+        ? await client.from("entities").select("id,slug,name,entity_type,primary_universe_id,short_description,status")
+            .in("id", entityIds).eq("primary_universe_id", universe.id)
+        : { data: [], error: null };
+      if (entityError) throw new Error("Could not resolve the existing Marvel identity.");
+      if ((matches || []).length === 1) existing = matches[0];
+      else if ((matches || []).length > 1) {
+        return { name, id: itemId, skipped: true, reason: "The official Marvel profile URL is linked to multiple entities; duplicate resolution needs review." };
+      }
+    }
+  }
+
+  // Exact-name fallback is safe only when a single identity in the Marvel hub has this name.
+  if (!existing) {
+    const { data: nameMatches, error: nameError } = await client.from("entities")
+      .select("id,slug,name,entity_type,primary_universe_id,short_description,status")
+      .eq("primary_universe_id", universe.id).eq("name", name).limit(2);
+    if (nameError) throw new Error("Could not check an exact Marvel character name.");
+    if ((nameMatches || []).length === 1) existing = nameMatches[0];
+    else if ((nameMatches || []).length > 1) {
+      return { name, id: itemId, skipped: true, reason: "Multiple Marvel records already use this exact name; no duplicate was created." };
+    }
+  }
+
   let entity = existing;
   if (!entity) {
     const { data, error } = await client.from("entities").insert({
@@ -1651,10 +1689,11 @@ async function importMarvelBatch(client: any, user: any, offset: number, limit: 
     throw new Error("Marvel import accepts a batch size of 1–3 characters to keep source and research calls bounded.");
   }
   const sparql = [
-    "SELECT DISTINCT ?item ?itemLabel ?itemDescription ?image ?article WHERE {",
+    "SELECT DISTINCT ?item ?itemLabel ?itemDescription ?image ?article ?officialPage WHERE {",
     "  ?item wdt:P1080 wd:Q931597; wdt:P31/wdt:P279* wd:Q95074.",
     "  OPTIONAL { ?item wdt:P18 ?image. }",
     "  OPTIONAL { ?article schema:about ?item; schema:isPartOf <https://en.wikipedia.org/>. }",
+    "  OPTIONAL { ?item wdt:P856 ?officialPage. }",
     "  SERVICE wikibase:label { bd:serviceParam wikibase:language \"en\". }",
     "}",
     "ORDER BY LCASE(STR(?itemLabel))",
@@ -1682,6 +1721,7 @@ async function importMarvelBatch(client: any, user: any, offset: number, limit: 
       name: cleanText(row.itemLabel?.value, 160),
       description: cleanText(row.itemDescription?.value, 420),
       articleUrl: cleanText(row.article?.value, 900),
+      officialPageUrl: cleanText(row.officialPage?.value, 900),
       imageFile
     };
   }).filter((item: any) => /^Q[1-9]\d{0,11}$/.test(item.id) && item.name);
