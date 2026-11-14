@@ -1616,7 +1616,8 @@ async function importMarvelCharacter(client: any, user: any, universe: any, cand
 
   // Reuse a pre-indexed Marvel identity only when its first-party profile URL matches exactly.
   if (!existing && candidate.officialPageUrl) {
-    const normalizedUrl = candidate.officialPageUrl.replace(/\\/+$/, "");
+    let normalizedUrl = candidate.officialPageUrl;
+    while (normalizedUrl.endsWith("/")) normalizedUrl = normalizedUrl.slice(0, -1);
     const { data: matchingSources, error: sourceError } = await client.from("source_records")
       .select("id,url").in("url", [normalizedUrl, normalizedUrl + "/"]).limit(3);
     if (sourceError) throw new Error("Could not check existing Marvel official profile links.");
