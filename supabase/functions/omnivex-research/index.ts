@@ -1116,16 +1116,16 @@ async function importOfficialCandidate(client: any, user: any, sourceKey: string
     profileCreated = true;
   }
 
-  if (profileCreated) {
-    const factRows = parsed.facts.map((fact: any) => ({
-      entity_id: entity.id, entity_version_id: version.id, source_record_id: sourceRecord.id,
-      fact_key: fact.key, fact_value: { value: fact.value, language: parsed.language },
-      source_locator: fact.locator, source_language: parsed.language,
-      review_status: "submitted", created_by: user.id
-    }));
-    const { error: factsError } = await client.from("entity_profile_facts").insert(factRows);
-    if (factsError && factsError.code !== "23505") throw new Error("Could not save profile facts: " + factsError.message);
-  }
+  const factRows = parsed.facts.map((fact: any) => ({
+    entity_id: entity.id, entity_version_id: version.id, source_record_id: sourceRecord.id,
+    fact_key: fact.key, fact_value: { value: fact.value, language: parsed.language },
+    source_locator: fact.locator, source_language: parsed.language,
+    review_status: "submitted", created_by: user.id
+  }));
+  const { error: factsError } = await client.from("entity_profile_facts").upsert(factRows, {
+    onConflict: "entity_id,source_record_id,fact_key", ignoreDuplicates: true
+  });
+  if (factsError) throw new Error("Could not save profile facts: " + factsError.message);
 
   const { data: linkExisting, error: linkLookupError } = await client.from("entity_source_links")
     .select("id").eq("entity_id", entity.id).eq("source_record_id", sourceRecord.id).maybeSingle();
