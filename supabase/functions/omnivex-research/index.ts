@@ -814,7 +814,8 @@ function metaContent(html: string, key: string) {
 }
 
 function firstTagText(html: string, tag: string) {
-  const match = html.match(new RegExp("<" + tag + "\\\\b[^>]*>([\\\\s\\\\S]*?)<\\\\/" + tag + ">", "i"));
+  const safeTag = tag.replace(/[^a-z0-9]/gi, "");
+  const match = html.match(new RegExp("<" + safeTag + "\\b[^>]*>([\\s\\S]*?)<\\/" + safeTag + ">", "i"));
   return match ? cleanText(htmlToText(match[1]), 220) : "";
 }
 
@@ -823,7 +824,7 @@ function trimWordCount(value: string, maxWords = 22) {
 }
 
 function readAttribute(attributes: string, name: string) {
-  const match = attributes.match(new RegExp("\\\\b" + name + "\\\\s*=\\\\s*['\\\"]([^'\\\"]*)['\\\"]", "i"));
+  const match = attributes.match(new RegExp("\\b" + name + "\\s*=\\s*['\"]([^'\"]*)['\"]", "i"));
   return match ? decodeHtml(match[1]) : "";
 }
 
@@ -864,8 +865,12 @@ function parseDcDirectory(html: string) : OfficialCandidate[] {
     if (!pathMatch) continue;
     const inner = match[2] || "";
     const image = inner.match(/<img\b([^>]*)>/i);
+    const innerLines = htmlToText(inner).split("\n").map(line => cleanText(line, 160)).filter(Boolean);
     const name = cleanText(
-      htmlToText(inner) || readAttribute(image?.[1] || "", "alt") || readAttribute(attributes, "title"),
+      readAttribute(image?.[1] || "", "alt") ||
+      readAttribute(attributes, "title") ||
+      innerLines[0] ||
+      "",
       160
     );
     if (!name) continue;
@@ -890,8 +895,12 @@ function parseOnePieceDirectory(html: string) : OfficialCandidate[] {
     if (!pathMatch || ["index", "syllabary"].includes(pathMatch[1].toLowerCase())) continue;
     const inner = match[2] || "";
     const image = inner.match(/<img\b([^>]*)>/i);
+    const innerLines = htmlToText(inner).split("\n").map(line => cleanText(line, 160)).filter(Boolean);
     const name = cleanText(
-      htmlToText(inner) || readAttribute(image?.[1] || "", "alt") || readAttribute(attributes, "title"),
+      readAttribute(image?.[1] || "", "alt") ||
+      readAttribute(attributes, "title") ||
+      innerLines[0] ||
+      "",
       160
     );
     if (!name) continue;
@@ -1005,43 +1014,23 @@ async function mapConcurrent<T, R>(items: T[], concurrency: number, task: (item:
   return results;
 }
 
-async function importOfficialCandidate(client: any, user: any, sourceKey: string, candidate: OfficialCandidate, page: number, universe: any, existingEntities: any[], existingAliases: any[]) {
+async function importOfficialCandidate(client: any, user: any, sourceKey: string, candidate: OfficialCandidate, page: number, universe: any, existingEntities: any[]) {
   const host = sourceKey === "dc" ? "dc.com" : "one-piece.com";
   const detailHtml = await fetchOfficialHtml(candidate.url, host);
-  const parsed = sourceKey === "dc" ? parseDcProfile(detailHtml, candidate) : parseOnePieceProfile(detailHtml, candidate);
+  const pageHeading = firstTagText(detailHtml, "h1");
+  const canonicalName = sourceKey === "one_piece"
+    ? cleanText(pageHeading, 160)
+    : cleanText(pageHeading || candidate.name, 160);
+  if (!canonicalName) throw new Error("The official profile did not expose a canonical character heading.");
+  const canonicalCandidate = { ...candidate, name: canonicalName };
+  const parsed = sourceKey === "dc" ? parseDcProfile(detailHtml, canonicalCandidate) : parseOnePieceProfile(detailHtml, canonicalCandidate);
   if (!parsed.facts.length) throw new Error("The official profile did not expose any structured facts.");
 
   const slugPrefix = sourceKey === "dc" ? "dc-" : "op-";
   const slug = slugPrefix + (slugify(candidate.pathSlug) || "character");
   const aliases = parsed.profileData?.identity?.aliases || [];
-  const aliasKeys = new Set([candidate.name, ...aliases].map(canonicalNameKey).filter(Boolean));
-  let entity = existingEntities.find(row =>
-    row.slug === slug ||
-    canonicalNameKey(row.name) === canonicalNameKey(candidate.name)
-  );
-  if (!entity) {
-    const aliasMatch = existingAliases.find(row => aliasKeys.has(canonicalNameKey(row.alias)));
-    if (aliasMatch) entity = existingEntities.find(row => row.id === aliasMatch.entity_id) || null;
-  }
-  if (!entity && sourceKey === "one_piece") {
-    const commonNames: Record<string, string[]> = {
-      "モンキー・d・ルフィ": ["monkey d luffy", "luffy"],
-      "ロロノア・ゾロ": ["roronoa zoro", "zoro"],
-      "ナミ": ["nami"],
-      "ウソップ": ["usopp"],
-      "サンジ": ["sanji"],
-      "トニートニー・チョッパー": ["tony tony chopper", "chopper"],
-      "ニコ・ロビン": ["nico robin", "robin"],
-      "フランキー": ["franky"],
-      "ブルック": ["brook"],
-      "ジンベエ": ["jinbe", "jimbei"]
-    };
-    const mapped = commonNames[cleanText(candidate.name, 160).toLowerCase()] || [];
-    const mappedKeys = new Set(mapped.map(canonicalNameKey));
-    const match = existingEntities.find(row => mappedKeys.has(canonicalNameKey(row.name))) ||
-      existingAliases.find(row => mappedKeys.has(canonicalNameKey(row.alias)));
-    if (match) entity = existingEntities.find(row => row.id === (match.id || match.entity_id)) || null;
-  }
+  // An official profile URL is the identity key. Never merge different URLs by a possibly generic name or alias.
+  let entity = existingEntities.find(row => row.slug === slug);
 
   const { data: sourceExisting, error: sourceLookupError } = await client.from("source_records")
     .select("id,title,url").eq("url", candidate.url).maybeSingle();
@@ -1065,7 +1054,7 @@ async function importOfficialCandidate(client: any, user: any, sourceKey: string
 
   if (!entity) {
     const { data, error } = await client.from("entities").insert({
-      slug, name: candidate.name, entity_type: "character", primary_universe_id: universe.id,
+      slug, name: canonicalCandidate.name, entity_type: "character", primary_universe_id: universe.id,
       short_description: parsed.summary || null, status: "provisional", created_by: user.id
     }).select("id,slug,name").single();
     if (error) {
@@ -1152,7 +1141,7 @@ async function importOfficialCandidate(client: any, user: any, sourceKey: string
   return { entityId: entity.id, name: entity.name, created: !existingEntities.some(row => row.id === entity.id && row.slug === entity.slug), profileCreated, factCount: profileCreated ? parsed.facts.length : 0 };
 }
 
-async function importOfficialCatalogPage(client: any, user: any, sourceKey: string, page: number) {
+async function importOfficialCatalogPage(client: any, user: any, sourceKey: string, page: number, dryRun = false) {
   if (!Number.isInteger(page) || page < 0 || page > 50) throw new Error("Invalid catalog page.");
   const universe = await getOrCreateUniverse(client, user.id, sourceKey);
   let directoryUrl = "";
@@ -1172,6 +1161,22 @@ async function importOfficialCatalogPage(client: any, user: any, sourceKey: stri
   } else {
     throw new Error("Unsupported official catalog source.");
   }
+  if (dryRun) {
+    const sample = await mapConcurrent(candidates.slice(0, 3), 2, async (candidate) => {
+      try {
+        const profileHtml = await fetchOfficialHtml(candidate.url, sourceKey === "dc" ? "dc.com" : "one-piece.com");
+        return {
+          directory_name: candidate.name,
+          profile_heading: firstTagText(profileHtml, "h1"),
+          profile_title: metaContent(profileHtml, "og:title"),
+          profile_url: candidate.url
+        };
+      } catch (error) {
+        return { directory_name: candidate.name, profile_url: candidate.url, error: cleanText(error instanceof Error ? error.message : "Profile fetch failed.", 180) };
+      }
+    });
+    return { source: sourceKey, page, dry_run: true, directory_candidates: candidates.length, sample, records_written: 0 };
+  }
   if (!candidates.length) {
     const title = firstTagText(directoryHtml, "title") || metaContent(directoryHtml, "og:title") || "";
     const linkCount = directoryHtml.split("<a").length - 1;
@@ -1188,15 +1193,13 @@ async function importOfficialCatalogPage(client: any, user: any, sourceKey: stri
     );
   }
 
-  const [{ data: existingEntities, error: entityListError }, { data: existingAliases, error: aliasListError }] = await Promise.all([
-    client.from("entities").select("id,name,slug,short_description").eq("primary_universe_id", universe.id).limit(5000),
-    client.from("entity_aliases").select("entity_id,alias").limit(10000)
-  ]);
-  if (entityListError || aliasListError) throw new Error("Could not load existing records for duplicate detection.");
+  const { data: existingEntities, error: entityListError } = await client.from("entities")
+    .select("id,name,slug,short_description").eq("primary_universe_id", universe.id).limit(5000);
+  if (entityListError) throw new Error("Could not load existing records for duplicate detection.");
 
   const results = await mapConcurrent(candidates, 5, async (candidate) => {
     try {
-      const result = await importOfficialCandidate(client, user, sourceKey, candidate, page, universe, existingEntities || [], existingAliases || []);
+      const result = await importOfficialCandidate(client, user, sourceKey, candidate, page, universe, existingEntities || []);
       return { ok: true, ...result };
     } catch (error) {
       return { ok: false, name: candidate.name, error: cleanText(error instanceof Error ? error.message : "Import failed.", 260) };
@@ -1213,6 +1216,40 @@ async function importOfficialCatalogPage(client: any, user: any, sourceKey: stri
     errors: failures.slice(0, 8).map((item: any) => ({ name: item.name, error: item.error })),
     done: false,
     note: "All imported identities, profile facts and source records remain provisional/submitted. Official profile facts are not battle feats and are not moderator-verified."
+  };
+}
+
+
+async function importOfficialCatalogBatch(client: any, user: any, sourceKey: string, pageStart: number, pageEnd: number) {
+  const maximumPage = sourceKey === "dc" ? 13 : sourceKey === "one_piece" ? 42 : 0;
+  if (!maximumPage) throw new Error("Unsupported official catalog source.");
+  if (!Number.isInteger(pageStart) || !Number.isInteger(pageEnd) || pageStart < 1 || pageEnd < pageStart || pageEnd > maximumPage || pageEnd - pageStart > 2) {
+    throw new Error("A catalog batch must contain between one and three valid pages.");
+  }
+  const pages = Array.from({ length: pageEnd - pageStart + 1 }, (_, index) => pageStart + index);
+  // Two pages run in parallel; each page keeps its bounded profile-fetch concurrency.
+  const pageResults = await mapConcurrent(pages, 2, async (page) =>
+    await importOfficialCatalogPage(client, user, sourceKey, page, false)
+  );
+  const sum = (key: string) => pageResults.reduce((total: number, item: any) => total + Number(item[key] || 0), 0);
+  return {
+    source: sourceKey,
+    page_start: pageStart,
+    page_end: pageEnd,
+    pages: pageResults.map((item: any) => ({
+      page: item.page,
+      candidates: item.candidates || 0,
+      imported: item.imported || 0,
+      skipped: item.skipped || 0,
+      failed: item.failed || 0,
+      errors: item.errors || []
+    })),
+    candidates: sum("candidates"),
+    imported: sum("imported"),
+    skipped: sum("skipped"),
+    failed: sum("failed"),
+    done: false,
+    note: "Official character profile facts remain submitted. Feats and image rights are handled in separate review workflows."
   };
 }
 
@@ -1236,10 +1273,17 @@ Deno.serve(async (req: Request) => {
 
     if (!user) return reply({ error: "Sign in to save sources or import records into the OMNIVEX index." }, 401);
 
+    if (action === "official_catalog_batch") {
+      const sourceKey = cleanText(body?.source, 40).toLowerCase();
+      const pageStart = Number(body?.pageStart);
+      const pageEnd = Number(body?.pageEnd);
+      return reply(await importOfficialCatalogBatch(client, user, sourceKey, pageStart, pageEnd));
+    }
+
     if (action === "official_catalog_page") {
       const sourceKey = cleanText(body?.source, 40).toLowerCase();
       const page = Number(body?.page);
-      return reply(await importOfficialCatalogPage(client, user, sourceKey, page));
+      return reply(await importOfficialCatalogPage(client, user, sourceKey, page, body?.dryRun === true));
     }
 
     if (action === "save_source") {
@@ -1276,6 +1320,8 @@ Deno.serve(async (req: Request) => {
     }
     return reply({ error: "Unknown research action." }, 400);
   } catch (error) {
-    return reply({ error: cleanText(error instanceof Error ? error.message : "Research request failed.", 420) }, 500);
+    const message = cleanText(error instanceof Error ? error.message : "Research request failed.", 420);
+    console.error("[omnivex-research] request failed:", message);
+    return reply({ error: message }, 500);
   }
 });
