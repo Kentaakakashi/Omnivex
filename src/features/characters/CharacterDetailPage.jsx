@@ -116,8 +116,12 @@ export default function CharacterDetailPage() {
       const [capResult, evidenceResult, mediaResult, participantResult] = await Promise.all([
         supabase.from("capabilities").select("*").eq("entity_version_id", activeVersion.id).order("capability_name"),
         supabase.from("evidence_records").select("*").eq("entity_version_id", activeVersion.id).order("created_at", { ascending: false }).limit(50),
-        supabase.from("entity_media").select("asset_url,source_url,usage_basis,approval_status,alt_text,source_title,attribution_text")
-          .eq("entity_version_id", activeVersion.id).eq("approval_status", "approved").eq("is_primary", true).maybeSingle(),
+        supabase.from("entity_media").select("asset_url,source_url,usage_basis,approval_status,alt_text,source_title,attribution_text,submitted_by,license_name")
+          .eq("entity_version_id", activeVersion.id)
+          .or(user?.id
+            ? "approval_status.eq.approved,and(approval_status.eq.submitted,submitted_by.eq." + user.id + ")"
+            : "approval_status.eq.approved")
+          .eq("is_primary", true).maybeSingle(),
         supabase.from("matchup_participants").select("matchup_id").eq("entity_version_id", activeVersion.id)
       ]);
       if (!active) return;
@@ -160,7 +164,8 @@ export default function CharacterDetailPage() {
   };
 
   const artAllowed = Boolean(artwork?.asset_url && artwork?.source_url &&
-    artwork?.approval_status === "approved" && allowedMediaBases.includes(artwork?.usage_basis));
+    (artwork?.approval_status === "approved" || (artwork?.approval_status === "submitted" && artwork?.submitted_by === user?.id)) &&
+    allowedMediaBases.includes(artwork?.usage_basis));
 
   if (loading) return <main className="atlas-feature-page character-page"><p className="platform-loading">Building character dossier…</p></main>;
   if (!entity) return (
@@ -190,8 +195,9 @@ export default function CharacterDetailPage() {
         </div>
         <div className="character-hero__art">
           {artAllowed
-            ? <img src={artwork.asset_url} alt={artwork.alt_text || entity.name} />
-            : <div className="character-art-placeholder"><span>{entity.name.split(/\s+/).map(part => part[0]).join("").slice(0, 3).toUpperCase()}</span><small>OFFICIAL, VERSION-MATCHED ARTWORK PENDING</small></div>}
+            ? <><img src={artwork.asset_url} alt={artwork.alt_text || entity.name} />
+              {artwork.approval_status === "submitted" && <small className="character-art-review-note">YOUR LICENSED IMAGE SUBMISSION · REVIEW PENDING</small>}</>
+            : <div className="character-art-placeholder"><span>{entity.name.split(/\s+/).map(part => part[0]).join("").slice(0, 3).toUpperCase()}</span><small>LICENSED, VERSION-MATCHED ARTWORK PENDING</small></div>}
         </div>
         <div className="character-hero__index"><span>INDEX ID</span><strong>{entity.id.slice(0, 8).toUpperCase()}</strong><span>IDENTITY RECORD</span><strong>{entity.status.toUpperCase()}</strong></div>
       </header>
